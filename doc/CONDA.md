@@ -12,7 +12,9 @@ conda create -n equinox -c conda-forge python=3.7 dask dask-jobqueue \
             hvplot geoviews datashader nodejs \
             intake-xarray gcsfs \
             cmocean gsw \
-            pytide pyinterp 
+            pytide pyinterp \
+            statsmodels
+
 conda activate equinox
 #conda install -c conda-forge xgcm xmitgcm
 conda install pip  # new, required for pip install git+https
