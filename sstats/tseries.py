@@ -108,20 +108,30 @@ def wrapper(func,
     
     return x
 
-def _normal(time, draws=1, loc=0, scale=1, seed=None, **kwargs):
+def _normal(loc, scale, time, draws=1, seed=None, **kwargs):
     rng = np.random.default_rng(seed=seed)
     if not isinstance(time, int):
         time = time.size
-    return rng.normal(loc, scale, (draws, time))
+    out = np.zeros((loc.size, scale.size, draws, time))
+    for i, l in enumerate(loc[:,0,0,0]):
+        for j, s in enumerate(scale[0,:,0,0]):
+            #assert False,'shape = {}'.format(rng.normal(l, s, (draws, time)).shape)
+            out[i,j,:,:] = rng.normal(l, s, (draws, time))
+    return out
     
-def normal(time, **kwargs):
+def normal(time, loc=0., scale=1., draws=1, **kwargs):
     """ wraps numpy random methods 
     https://numpy.org/doc/stable/reference/random/index.html#quick-start
     https://docs.python.org/dev/library/random.html#random.random
     """
     x = wrapper(_normal, 
                 time,
+                params={'loc': loc, 'scale': scale, 'draw': draws},
                 **kwargs)
+    if 'loc' not in x.dims:
+        x = x.assign_attrs(loc=loc)
+    if 'scale' not in x.dims:
+        x = x.assign_attrs(scale=scale)
     return x
 
 def _exp_autocorr(tau, rms, time, draws=1, dt=None, **kwargs):
