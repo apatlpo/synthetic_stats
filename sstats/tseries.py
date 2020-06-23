@@ -12,6 +12,7 @@ def wrapper(func,
             chunks=None,
             dtype='float',
             output='xarray',
+            name='z',
             **kwargs):
     """ Wraps timeseries generation code in order to distribute the generation
     
@@ -29,6 +30,9 @@ def wrapper(func,
             Associated chunks
         seed: int, optional
             numpy seed
+        name: str, optional
+            output name, may be required if multiple variables are correlated
+            (dask otherwise will assume they are one and the same)
         **kwargs:
             passed to func
     """
@@ -61,10 +65,13 @@ def wrapper(func,
     da_chunks = tuple(xr_chunks[d] for d in dims)
 
     # transform dimensions into dask arrays with appropriate forms
+    # Note: adding name to dimension names below is pretty critical if 
+    #   multiple calls to wrapper are made. 
+    #   dask will create a single object ... danger    
     dims_da = tuple(da.from_array(dims[d]
                                   .reshape(tuple(dims[d].size if i==j else 1 for j in range(Nd))),
                                   chunks=tuple(xr_chunks[d] if i==j else -1 for j in range(Nd)),
-                                  name=d
+                                  name=name+d
                                  )
                      for i, d in enumerate(dims)
                     )
@@ -74,21 +81,20 @@ def wrapper(func,
         if seed is None:
             seed = np.random.randint(0,2**32-1)
         np.random.seed(seed+block_info[0]['num-chunks'][0])
-        return func(*args[1:], 
-                    draws=args[0].shape[-2], 
-                    seed=seed, 
+        return func(*args[1:],
+                    draws=args[0].shape[-2],
+                    seed=seed,
                     **kwargs)
 
     x = da.empty(shape=shape, chunks=da_chunks)
-    dims_da = tuple(d for d in dims_da if d.name!='draw')
+    dims_da = tuple(d for d in dims_da if d.name!=name+'draw')
     x = x.map_blocks(_func, *dims_da, **kwargs, dtype=dtype)
-    
     x = x.squeeze()
     dims = {d: v for d, v in dims.items() if v.size>1}
     
     # put result in an xarray DataArray
     if output=='xarray':
-        x = xr.DataArray(x, dims=tuple(dims), coords=dims)        
+        x = xr.DataArray(x, dims=tuple(dims), coords=dims).rename(name)
     elif output=='dask_dd':
         assert x.ndim<3, 'Data generated is not 2D and cannot be transformed' \
                 +' into a dataframe'
@@ -115,7 +121,6 @@ def _normal(loc, scale, time, draws=1, seed=None, **kwargs):
     out = np.zeros((loc.size, scale.size, draws, time))
     for i, l in enumerate(loc[:,0,0,0]):
         for j, s in enumerate(scale[0,:,0,0]):
-            #assert False,'shape = {}'.format(rng.normal(l, s, (draws, time)).shape)
             out[i,j,:,:] = rng.normal(l, s, (draws, time))
     return out
     
@@ -132,6 +137,31 @@ def normal(time, loc=0., scale=1., draws=1, **kwargs):
         x = x.assign_attrs(loc=loc)
     if 'scale' not in x.dims:
         x = x.assign_attrs(scale=scale)
+    return x
+    
+def _binomial(n, p, time, draws=1, seed=None, **kwargs):
+    rng = np.random.default_rng(seed=seed)
+    if not isinstance(time, int):
+        time = time.size
+    out = np.zeros((n.size, p.size, draws, time))
+    for i, _n in enumerate(n[:,0,0,0]):
+        for j, _p in enumerate(p[0,:,0,0]):
+            out[i,j,:,:] = rng.binomial(_n, _p, (draws, time))
+    return out
+    
+def binomial(time, n=1, p=.5, draws=1, **kwargs):
+    """ wraps numpy random methods 
+    https://numpy.org/doc/stable/reference/random/index.html#quick-start
+    https://docs.python.org/dev/library/random.html#random.random
+    """
+    x = wrapper(_binomial, 
+                time,
+                params={'n': n, 'p': p, 'draw': draws},
+                **kwargs)
+    if 'n' not in x.dims:
+        x = x.assign_attrs(n=n)
+    if 'p' not in x.dims:
+        x = x.assign_attrs(p=p)
     return x
 
 def _exp_autocorr(tau, rms, time, draws=1, dt=None, **kwargs):

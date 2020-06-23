@@ -13,7 +13,7 @@ conda create -n equinox -c conda-forge python=3.7 dask dask-jobqueue \
             intake-xarray gcsfs \
             cmocean gsw \
             pytide pyinterp \
-            statsmodels
+            statsmodels xhistogram
 
 conda activate equinox
 #conda install -c conda-forge xgcm xmitgcm
