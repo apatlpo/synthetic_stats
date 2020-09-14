@@ -114,6 +114,31 @@ def wrapper(func,
     
     return x
 
+def _uniform(low, high, time, draws=1, seed=None, **kwargs):
+    rng = np.random.default_rng(seed=seed)
+    if not isinstance(time, int):
+        time = time.size
+    out = np.zeros((low.size, high.size, draws, time))
+    for i, l in enumerate(low[:,0,0,0]):
+        for j, h in enumerate(high[0,:,0,0]):
+            out[i,j,:,:] = rng.uniform(l, h, (draws, time))
+    return out
+    
+def uniform(time, low=0., high=1., draws=1, **kwargs):
+    """ wraps numpy random methods 
+    https://numpy.org/doc/stable/reference/random/index.html#quick-start
+    https://docs.python.org/dev/library/random.html#random.random
+    """
+    x = wrapper(_uniform, 
+                time,
+                params={'low': low, 'high': high, 'draw': draws},
+                **kwargs)
+    if 'low' not in x.dims:
+        x = x.assign_attrs(low=low)
+    if 'high' not in x.dims:
+        x = x.assign_attrs(high=high)
+    return x
+
 def _normal(loc, scale, time, draws=1, seed=None, **kwargs):
     rng = np.random.default_rng(seed=seed)
     if not isinstance(time, int):

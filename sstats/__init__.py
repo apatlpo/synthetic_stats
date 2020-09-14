@@ -1,4 +1,4 @@
-__all__ = ['tseries',]
+__all__ = ['tseries', 'filtering']
 
 #from . import postp
 
