@@ -1,13 +1,13 @@
-__all__ = ['tseries', 'filtering']
+__all__ = ['tseries', 'filtering', 'hfreq']
 
-#from . import postp
+#from . import tseries
 
 import matplotlib.colors as colors
 import matplotlib.cm as cmx
 
 def get_cmap_colors(Nc, cmap='plasma'):
     """ load colors from a colormap to plot lines
-    
+
     Parameters
     ----------
     Nc: int
