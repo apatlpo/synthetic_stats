@@ -1,6 +1,7 @@
 import numpy as np
 import xarray as xr
 
+import sympy as sy
 from sympy import Symbol, \
                   fourier_transform, inverse_fourier_transform, \
                   lambdify, \
@@ -39,6 +40,18 @@ def _xr_tau(bounds=None,
                      )
     return da
 
+def _xr_tau(bounds=None,
+            N=100,
+            ):
+    if bounds is None:
+        bounds = _default_tau_bounds
+    tau = np.linspace(bounds[0], bounds[1], N)
+    da = xr.DataArray(tau,
+                      dims=['tau'],
+                      coords={'tau': (['tau'], tau)},
+                     )
+    return da
+
 def _xr_omega(bounds=None,
               N=100,
              ):
@@ -55,8 +68,8 @@ class signal(object):
 
     def __init__(self,
                  model,
-                 parameters=None,
-                 parameters_values=None,
+                 parameters={},
+                 parameters_values={},
                  autocorrelation=True,
                  ):
         self.model = model
@@ -64,19 +77,55 @@ class signal(object):
         self.p_values = parameters_values
         if autocorrelation:
             self.autocorrelation = self.init_autocorrelation()
-            self.spectrum = fourier_transform(self.autocorrelation, tau, omega/(2*pi))
+            self.update_spectrum()
         else:
             self.spectrum = self.init_spectrum()
-            self.autocorrelation = inverse_fourier_transform(u.spectrum, omega, tau/2/pi)/2/pi
+            self.update_autocorrelation()
         #
-        self.autocorrelation_lbd = lambdify([tau, *self.p], self.autocorrelation, 'numpy')
-        self.spectrum_lbd = lambdify([omega, *self.p], self.spectrum, 'numpy')
+        self.update_lambdas()
 
     def init_autocorrelation(self):
         return tau*0
 
     def init_spectrum(self):
         return omega*0
+
+    def update_autocorrelation(self):
+        self.autocorrelation = inverse_fourier_transform(u.spectrum, omega, tau/2/pi)/2/pi
+
+    def update_spectrum(self):
+        self.spectrum = fourier_transform(self.autocorrelation, tau, omega/(2*pi))
+
+    def update_parameters(self):
+        self.p = {str(s):s for s in self.autocorrelation.free_symbols if str(s)!='tau'}
+
+    def update_lambdas(self):
+        self.autocorrelation_lbd = lambdify([tau, *self.p],
+                                            self.autocorrelation,
+                                            'numpy'
+                                            )
+        self.spectrum_lbd = lambdify([omega, *self.p],
+                                     self.spectrum,
+                                     'numpy'
+                                     )
+
+    def evaluate_autocorrelation(self,
+                                 tau=None,
+                                 name='autocorrelation',
+                                 **parameters_values,
+                                 ):
+        if tau is None:
+            tau = _xr_tau()
+        elif isinstance(tau, dict):
+            tau = _xr_tau(**omega)
+        p_values = self.p_values
+        p_values.update(**parameters_values)
+        p = [p_values[key] for key in self.p]
+        da = (self.autocorrelation_lbd(tau, *p)
+                .rename(name)
+                .assign_attrs(**parameters_values)
+             )
+        return da
 
     def evaluate_spectrum(self,
                           omega=None,
@@ -94,6 +143,8 @@ class signal(object):
                 .rename(name)
                 .assign_attrs(**parameters_values)
              )
+        # sympy issues fakely complex number sometime
+        da = np.abs(da)
         return da
 
     def plot_spectrum(self,
@@ -121,7 +172,11 @@ class signal(object):
 
 class low_frequency_signal(signal):
 
-    def __init__(self, model='exponential', parameters=None, parameters_values=None):
+    def __init__(self,
+                 model='exponential',
+                 parameters=None,
+                 parameters_values=None,
+                 ):
         if not parameters:
             p = dict(**_default_high)
         else:
@@ -156,7 +211,11 @@ class low_frequency_signal(signal):
 
 class high_frequency_signal(signal):
 
-    def __init__(self, model='exponential', parameters=None, parameters_values=None):
+    def __init__(self,
+                 model='exponential',
+                 parameters=None,
+                 parameters_values=None,
+                 ):
         if not parameters:
             p = dict(**_default_high)
         else:
@@ -169,7 +228,8 @@ class high_frequency_signal(signal):
 
     def init_autocorrelation(self):
         if self.model=='exponential':
-            R = self.p['U']**2 * exp(-abs(tau)/self.p['T']) * cos(sigma*tau)
+            R = self.p['U']**2 * exp(-abs(tau)/self.p['T']) \
+                * cos(self.p['sigma']*tau)
         else:
             R = tau*0
         return R
@@ -198,3 +258,25 @@ class high_frequency_signal(signal):
                   .rename(name)
                   )
         return da
+
+def add(*args, model='sum', labels=None, weights=None, auto2spec=True):
+    if labels is None:
+        labels = [str(i) for i in range(len(args))]
+    if weights is None:
+        weights = [1 for a in args]
+    # create signal
+    out = signal(model)
+    # update autocorrelation and spectra
+    for a, l in zip(args, labels):
+        R = a.autocorrelation.copy()
+        for s in R.free_symbols:
+            if str(s)!='tau':
+                R = R.subs(s, sy.Symbol(str(s)+'_'+l, positive=s.is_positive))
+        out.autocorrelation = out.autocorrelation + R
+    # update spectrum
+    out.update_spectrum()
+    # update parameter list
+    out.update_parameters()
+    # update lambdas
+    out.update_lambdas()
+    return out
