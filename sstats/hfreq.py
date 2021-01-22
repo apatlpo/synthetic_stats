@@ -5,7 +5,8 @@ import sympy as sy
 from sympy import Symbol, \
                   fourier_transform, inverse_fourier_transform, \
                   lambdify, \
-                  exp, cos, sin, pi
+                  exp, cos, sin, \
+                  pi, oo
 from sympy.abc import omega, t, tau
 
 T = Symbol('T', positive=True)
@@ -74,6 +75,7 @@ class signal(object):
                  ):
         self.model = model
         self.p = parameters
+        self.omega, self.tau = omega, tau
         self.p_values = parameters_values
         if autocorrelation:
             self.autocorrelation = self.init_autocorrelation()
@@ -81,6 +83,7 @@ class signal(object):
         else:
             self.spectrum = self.init_spectrum()
             self.update_autocorrelation()
+        self.update_variance()
         #
         self.update_lambdas()
 
@@ -95,6 +98,9 @@ class signal(object):
 
     def update_spectrum(self):
         self.spectrum = fourier_transform(self.autocorrelation, tau, omega/(2*pi))
+
+    def update_variance(self):
+        self.variance = self.spectrum.integrate((omega, -oo, oo)) /2/pi
 
     def update_parameters(self):
         self.p = {str(s):s for s in self.autocorrelation.free_symbols if str(s)!='tau'}
