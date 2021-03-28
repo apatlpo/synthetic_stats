@@ -5,7 +5,7 @@ Download Miniconda3 (i.e. for python3) from the [conda website](https://conda.io
 bash Miniconda3-latest-Linux-x86_64.sh
 bash
 conda update conda
-conda create -n equinox -c conda-forge python=3.7 dask dask-jobqueue \
+conda create -n stats -c conda-forge python=3.8 dask dask-jobqueue \
             xarray zarr netcdf4 python-graphviz \
             jupyterlab ipywidgets \
             cartopy geopandas scikit-learn seaborn \
@@ -13,17 +13,12 @@ conda create -n equinox -c conda-forge python=3.7 dask dask-jobqueue \
             intake-xarray gcsfs \
             cmocean gsw \
             pytide pyinterp \
-            statsmodels xhistogram
-
-conda activate equinox
-#conda install -c conda-forge xgcm xmitgcm
-conda install pip  # new, required for pip install git+https
-pip install git+https://github.com/xgcm/xgcm.git
-#conda install -c conda-forge xgcm
-pip install git+https://github.com/MITgcm/xmitgcm.git
+            statsmodels xhistogram \
+            sympy
+conda activate stats
 pip install git+https://github.com/xgcm/xrft.git
 conda install pywavelets
-cd croco_equinox; pip install -e .
+cd synthetic_stats; pip install -e .
 jupyter labextension install @jupyter-widgets/jupyterlab-manager \
                              @pyviz/jupyterlab_pyviz \
                              jupyter-leaflet
@@ -32,7 +27,7 @@ cp launch/jobqueue.yaml launch/distributed.yaml ~/.config/dask/
 
 In order to add the environnement to kernels available to jupyter, you need to run:
 ```
-python -m ipykernel install --user --name equinox --display-name "EQUINOX mit project env"
+python -m ipykernel install --user --name stats --display-name "stats project env"
 ```
 
 Uninstall library after `pip install -e .`:
