@@ -6,6 +6,18 @@ import dask.dataframe as dd
 from scipy import signal
 import statsmodels.api as sm
 
+# notes on generation of data with prescribed autocovariance:
+# - Lilly 2017b , section 5
+# - http://www.falmity.com/stats/python/c/gpeff/
+# - Percival 2006
+
+# from prescribed spectrum:
+# - Percival 1992
+
+# Matern process:
+# - https://scikit-learn.org/stable/modules/generated/sklearn.gaussian_process.kernels.Matern.html
+
+
 def wrapper(func,
             time,
             params=1,

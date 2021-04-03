@@ -2,12 +2,14 @@ import numpy as np
 import xarray as xr
 
 import sympy as sy
-from sympy import Symbol, \
+from sympy import Symbol, symbols, \
                   fourier_transform, inverse_fourier_transform, \
                   lambdify, \
                   exp, cos, sin, \
                   pi, oo
-from sympy.abc import omega, t, tau
+
+#from sympy.abc import omega, t, tau
+omega, t, tau = symbols("omega, t, tau", real=True)
 
 T = Symbol('T', positive=True)
 U = Symbol('U', positive=True)
@@ -235,6 +237,9 @@ class high_frequency_signal(signal):
     def init_autocorrelation(self):
         if self.model=='exponential':
             R = self.p['U']**2 * exp(-abs(tau)/self.p['T']) \
+                * cos(self.p['sigma']*tau)
+        elif self.model=='gaussian':
+            R = self.p['U']**2 * exp(-(tau/self.p['T'])**2) \
                 * cos(self.p['sigma']*tau)
         else:
             R = tau*0
