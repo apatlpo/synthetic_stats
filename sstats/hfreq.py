@@ -214,6 +214,7 @@ class low_frequency_signal(signal):
                      )
             p.update(**kwargs)
             da = exp_autocorr(**p)
+            # should rename tau into T here            
         return da
 
 
@@ -263,11 +264,14 @@ class high_frequency_signal(signal):
             p.update(**kwargs)
             x = exp_autocorr(**p, name='x')
             y = exp_autocorr(**p, name='y')
-            da = (np.real(x*np.cos(2*np.pi*p['sigma']*x['time'])
-                          + 1j*y*np.sin(2*np.pi*p['sigma']*x['time'])
-                          )
-                  .rename(name)
-                  )
+            with xr.set_options(keep_attrs=True):
+                da = (np.real(x*np.cos(2*np.pi*p['sigma']*x['time'])
+                              + 1j*y*np.sin(2*np.pi*p['sigma']*x['time'])
+                              )
+                      .rename(name)
+                      )
+            # should rename tau into T here
+            da = da.assign_attrs(sigma=p['sigma'])
         return da
 
 def add(*args, model='sum', labels=None, weights=None, auto2spec=True):

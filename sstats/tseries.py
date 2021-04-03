@@ -37,7 +37,8 @@ def wrapper(func,
         time: int, np.ndarray, tuple
             Number of time steps, time array, tuple (T, dt)
         params: int, dict, optional
-            Parameters that will lead to dimensions
+            Parameters that will lead to dimensions or required to generate
+            time series
         chunks: dict, optional
             Associated chunks
         seed: int, optional
@@ -334,10 +335,12 @@ def correlate(v1, v2, lags=None, **kwargs):
         _v2 = v2.isel(**{d: slice(0,2) for d in v2.dims if d is not 'time'})
         lags, _ = _correlate(_v1, _v2, dt=dt, ufunc=False, **kwargs)
         return correlate(v1, v2, lags=lags, **kwargs)
-
+    gufunc_kwargs = dict(output_sizes={'lags': lags.size})
     C = xr.apply_ufunc(_correlate, v1, v2,
                 dask='parallelized', output_dtypes=[np.float64],
                 input_core_dims=[['time'], ['time']],
                 output_core_dims=[['lags']],
-                output_sizes={'lags': lags.size}, kwargs=kwargs)
+                dask_gufunc_kwargs=gufunc_kwargs,
+                kwargs=kwargs,
+                )
     return C.assign_coords(lags=lags).rename(v1.name+'_'+v2.name)
