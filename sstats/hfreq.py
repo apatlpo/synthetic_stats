@@ -214,7 +214,7 @@ class low_frequency_signal(signal):
                      )
             p.update(**kwargs)
             da = exp_autocorr(**p)
-            # should rename tau into T here            
+            # should rename tau into T here
         return da
 
 
@@ -263,10 +263,12 @@ class high_frequency_signal(signal):
                      )
             p.update(**kwargs)
             x = exp_autocorr(**p, name='x')
+            if "seed" in p:
+                p["seed"] = p["seed"]+1
             y = exp_autocorr(**p, name='y')
             with xr.set_options(keep_attrs=True):
-                da = (np.real(x*np.cos(2*np.pi*p['sigma']*x['time'])
-                              + 1j*y*np.sin(2*np.pi*p['sigma']*x['time'])
+                da = (np.real((x+1j*y)/np.sqrt(2)
+                              *np.exp(2*np.pi*1j*p['sigma']*x['time'])
                               )
                       .rename(name)
                       )

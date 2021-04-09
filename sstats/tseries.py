@@ -261,6 +261,7 @@ def _correlate(v1, v2, dt=None, detrend=False, ufunc=True, **kwargs):
     ''' Compute a lagged correlation between two time series
     These time series are assumed to be regularly sampled in time
     and along the same time line.
+    Note: takes the complex conjugate of v2
 
     Parameters
     ----------
@@ -292,7 +293,7 @@ def _correlate(v1, v2, dt=None, detrend=False, ufunc=True, **kwargs):
     # infer number of lags from dummy computation
     i0 = tuple(0 for i in Ni) + np.s_[:,]
     f = _correlate(v1[i0], v2[i0], **_kwargs)
-    vv = np.full(Ni+f.shape, np.NaN)
+    vv = np.full(Ni+f.shape, np.NaN, dtype=v1.dtype)
     for ii in np.ndindex(Ni):
         f = _correlate(v1[ii + np.s_[:,]], v2[ii + np.s_[:,]], **_kwargs)
         Nj = f.shape
@@ -337,7 +338,7 @@ def correlate(v1, v2, lags=None, **kwargs):
         return correlate(v1, v2, lags=lags, **kwargs)
     gufunc_kwargs = dict(output_sizes={'lags': lags.size})
     C = xr.apply_ufunc(_correlate, v1, v2,
-                dask='parallelized', output_dtypes=[np.float64],
+                dask='parallelized', output_dtypes=[v1.dtype],
                 input_core_dims=[['time'], ['time']],
                 output_core_dims=[['lags']],
                 dask_gufunc_kwargs=gufunc_kwargs,
