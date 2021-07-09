@@ -202,13 +202,13 @@ def binomial(time, n=1, p=.5, draws=1, **kwargs):
         x = x.assign_attrs(p=p)
     return x
 
-def _exp_autocorr(tau, rms, time, draws=1, dt=None, **kwargs):
+def _exp_autocorr(T, rms, time, draws=1, dt=None, **kwargs):
     """ exp_autocorr core code. See exp_autocorr doc
     """
     #time = float(time.squeeze())
     arma = sm.tsa.arma_generate_sample
-    out = np.zeros((tau.size, rms.size, draws, time.size))
-    for i, t in enumerate(tau[:,0,0,0]):
+    out = np.zeros((T.size, rms.size, draws, time.size))
+    for i, t in enumerate(T[:,0,0,0]):
         for j, r in enumerate(rms[0,:,0,0]):
             ar = np.array([1, -1+dt/t]) # watch for sign
             am = np.array([1,])
@@ -220,16 +220,16 @@ def _exp_autocorr(tau, rms, time, draws=1, dt=None, **kwargs):
                                )
     return out
 
-def exp_autocorr(time, tau, rms, draws=1, **kwargs):
+def exp_autocorr(time, T, rms, draws=1, **kwargs):
     """Generate exponentially correlated time series
     Implemented via ARMA
-    x_{t} = x_{t-1} * (1-dt/tau) + \sqrt{2*dt/tau}*rms *e_t
+    x_{t} = x_{t-1} * (1-dt/T) + \sqrt{2*dt/T}*rms *e_t
 
     Parameters:
     -----------
     time: int, np.ndarray, tuple
         Number of time steps, time array, tuple (T, dt)
-    tau: float, iterable
+    T: float, iterable
         Decorrelation time scales
     rms: float, iterable
         Desired rms (not exact for each realization)
@@ -245,11 +245,11 @@ def exp_autocorr(time, tau, rms, draws=1, **kwargs):
 
     x = wrapper(_exp_autocorr,
                 time,
-                params={'tau': tau, 'rms': rms, 'draw': draws},
+                params={'T': T, 'rms': rms, 'draw': draws},
                 dt=dt,
                 **kwargs)
-    if 'tau' not in x.dims:
-        x = x.assign_attrs(tau=tau)
+    if 'T' not in x.dims:
+        x = x.assign_attrs(T=T)
     if 'rms' not in x.dims:
         x = x.assign_attrs(rms=rms)
 

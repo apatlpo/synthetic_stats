@@ -3,16 +3,22 @@ import xarray as xr
 
 import sympy as sy
 from sympy import Symbol, symbols, \
+                  integrate, \
                   fourier_transform, inverse_fourier_transform, \
                   lambdify, \
-                  exp, cos, sin, \
-                  pi, oo
+                  exp, cos, sin, sqrt, \
+                  DiracDelta, \
+                  pi, oo, I
 
 #from sympy.abc import omega, t, tau
-omega, t, tau = symbols("omega, t, tau", real=True)
+
+#omega, t, tau = symbols("omega, t, tau", real=True)
+tau = Symbol('tau', positive=True)
+omega = Symbol('omega', real=True)
 
 T = Symbol('T', positive=True)
 U = Symbol('U', positive=True)
+Us = Symbol('U_s', positive=True)
 sigma = Symbol('sigma', positive=True)
 
 # sympy fourier transform:
@@ -21,14 +27,17 @@ sigma = Symbol('sigma', positive=True)
 from .tseries import exp_autocorr
 #import sstats.tseries as ts # dev
 
+rads = 2*pi # sympy
+rad = 2*np.pi
+
 _default_tau_bounds = [0., 100.] # days
-_default_omega_bounds = [.01, 6] # cpd
+_default_omega_bounds = [.01*rad, 6*rad] # rpd
 #
 _default_low = dict(T=T, U=U)
 _default_low_values = dict(T=10, U=1.)
 #
-_default_high = dict(T=T, U=U, sigma=sigma)
-_default_high_values = dict(T=10, U=1., sigma=2.)
+_default_high = dict(T=T, U=U, Us=Us, sigma=sigma)
+_default_high_values = dict(T=10, U=1., Us=1., sigma=2.*rad)
 
 
 def _xr_tau(bounds=None,
@@ -52,20 +61,46 @@ def _xr_tau(bounds=None,
     da = xr.DataArray(tau,
                       dims=['tau'],
                       coords={'tau': (['tau'], tau)},
+                      name="tau"
                      )
     return da
 
 def _xr_omega(bounds=None,
               N=100,
              ):
+    """ returns omega xarray dataarray in radian per day
+    """
     if bounds is None:
         bounds = _default_omega_bounds
     omega = np.linspace(bounds[0], bounds[1], N)
     da = xr.DataArray(omega,
                       dims=['omega'],
-                      coords={'omega': (['omega'], omega)},
+                      coords={'omega': (['omega'], omega/rad)},
+                      name="omega_rad"
                      )
     return da
+
+def _fourier_transform(f, tau, omega):
+    """ wrapper around sympy fourier transform required in order
+    to obtain proper dirac functions for trigonometric functions
+
+    !! Assumes input function is even
+
+    But this still does not allow to compute the stationary contribution
+    to the spectrum: practical solution, add two signals, one having a very
+    long nonstationary timescale
+
+    see:
+    https://github.com/sympy/sympy/issues/2803
+    https://docs.sympy.org/latest/modules/integrals/integrals.html#sympy.integrals.transforms.fourier_transform
+
+    """
+    #fourier_transform(autocorrelation, tau, omega)
+    #return (integrate(f*exp(-I*2*pi*omega*tau), (tau, 0, oo))
+    #        +integrate(f*exp(-I*2*pi*omega*tau), (tau, -oo, 0))
+    #        )
+    # assumes f is even
+    return integrate(f*2*cos(2*pi*omega*tau), (tau, 0, oo)).simplify()
 
 class signal(object):
 
@@ -74,14 +109,16 @@ class signal(object):
                  parameters={},
                  parameters_values={},
                  autocorrelation=True,
+                 analytical_spectrum=None,
                  ):
         self.model = model
         self.p = parameters
         self.omega, self.tau = omega, tau
         self.p_values = parameters_values
+        self.analytical_spectrum = analytical_spectrum
         if autocorrelation:
             self.autocorrelation = self.init_autocorrelation()
-            self.update_spectrum()
+            self.update_spectrum(spectrum=analytical_spectrum)
         else:
             self.spectrum = self.init_spectrum()
             self.update_autocorrelation()
@@ -98,23 +135,38 @@ class signal(object):
     def update_autocorrelation(self):
         self.autocorrelation = inverse_fourier_transform(u.spectrum, omega, tau/2/pi)/2/pi
 
-    def update_spectrum(self):
-        self.spectrum = fourier_transform(self.autocorrelation, tau, omega/(2*pi))
+    def update_spectrum(self, spectrum=None):
+        if spectrum is None:
+            self.spectrum = _fourier_transform(self.autocorrelation, tau, omega/(2*pi))
+        else:
+            self.spectrum = spectrum
 
     def update_variance(self):
-        self.variance = self.spectrum.integrate((omega, -oo, oo)) /2/pi
+        self.variance = (self.spectrum.integrate((omega, -oo, oo))
+                         /2/pi
+                         ).simplify()
 
     def update_parameters(self):
         self.p = {str(s):s for s in self.autocorrelation.free_symbols if str(s)!='tau'}
 
     def update_lambdas(self):
-        self.autocorrelation_lbd = lambdify([tau, *self.p],
+        _p = list(self.p.values())
+        self.autocorrelation_lbd = lambdify([tau, *_p],
                                             self.autocorrelation,
                                             'numpy'
                                             )
-        self.spectrum_lbd = lambdify([omega, *self.p],
+        if hasattr(self, "stationary") and self.stationary:
+            eps = 1e-2 # less will be problematic
+            self._dirac_eps = eps
+            # https://fr.wikipedia.org/wiki/Distribution_de_Dirac
+            modules = ["numpy",
+                       {"DiracDelta":lambda x: np.exp(-np.abs(x/eps))/eps},
+                       ]
+        else:
+            modules = "numpy"
+        self.spectrum_lbd = lambdify([omega, *_p],
                                      self.spectrum,
-                                     'numpy'
+                                     modules
                                      )
 
     def evaluate_autocorrelation(self,
@@ -125,7 +177,7 @@ class signal(object):
         if tau is None:
             tau = _xr_tau()
         elif isinstance(tau, dict):
-            tau = _xr_tau(**omega)
+            tau = _xr_tau(**tau)
         p_values = self.p_values
         p_values.update(**parameters_values)
         p = [p_values[key] for key in self.p]
@@ -169,6 +221,7 @@ class signal(object):
                           )
         plt_kwargs.update(**kwargs)
         label = plt_kwargs['label']
+        #print(E)
         hdl = E.plot(**plt_kwargs)
         ax = hdl[0].axes
         if label and add_legend:
@@ -177,6 +230,10 @@ class signal(object):
             ax.grid()
         return hdl
 
+
+_analytical_spectrum_low = {
+    "exponential": ( U**2 *2*T /( T**2*omega**2 + 1 )),
+}
 
 class low_frequency_signal(signal):
 
@@ -193,7 +250,15 @@ class low_frequency_signal(signal):
             p_values = dict(**_default_high_values)
         else:
             p_values = parameters_values
-        super().__init__(model, parameters=p, parameters_values=p_values)
+        #
+        # bypass symbolic computation of the spectrum
+        spectrum = _analytical_spectrum_low[model]
+        #
+        super().__init__(model,
+                         parameters=p,
+                         parameters_values=p_values,
+                         analytical_spectrum=spectrum,
+                         )
 
     def init_autocorrelation(self):
         if self.model=='exponential':
@@ -208,42 +273,97 @@ class low_frequency_signal(signal):
         """
         if self.model=='exponential':
             p = dict(time=(100,1/24.),
-                     tau=_default_low_values['T'],
+                     T=_default_low_values['T'],
                      rms=1.,
                      name='low',
                      )
             p.update(**kwargs)
             da = exp_autocorr(**p)
-            # should rename tau into T here
         return da
 
 
+
+# sympy is not able to perform fourier transforms trigonometric functions
+# supplying analytical spectral form computed with wolframalpha is easiest
+
+# https://github.com/sympy/sympy/issues/2803
+# https://www.wolframalpha.com/input/?i=Fourier+transform+%5Bexp%28-abs%28t%2FT%29%29+cos%28s*t%29%2C+t%2C+omega+%5D
+# https://www.wolframalpha.com/input/?i=Fourier+transform+%5B+exp%28-%28t%2FT%29**2%29+cos%28s*t%29%2C+t%2C+omega+%5D
+_analytical_spectrum_high = {
+    "exponential": ( U**2 *2*T
+                      *( T**2 * ( sigma**2 + omega**2 ) + 1 )
+                      /( T**4*(sigma**2-omega**2)**2
+                         + 2*T**2*(sigma**2+omega**2)
+                         + 1
+                        )
+                      ),
+    "gaussian": ( U**2 *sqrt(pi) *T/2
+                 *(exp( T * sigma * omega ) + 1)
+                 *exp(-T**2*(sigma+omega)**2 /4)
+                 ),
+    "stationary": ( Us**2 *pi* ( DiracDelta( (sigma-omega) )
+                                +DiracDelta( (sigma+omega) )
+                                )
+                   )
+}
+
+
 class high_frequency_signal(signal):
+    """ High frequency signal model
+
+    Parameters:
+    -----------
+    model: str, optional
+    parameters=
+
+    """
 
     def __init__(self,
                  model='exponential',
                  parameters=None,
                  parameters_values=None,
+                 stationary=False,
                  ):
         if not parameters:
             p = dict(**_default_high)
         else:
             p = parameters
+        #
         if not parameters_values:
             p_values = dict(**_default_high_values)
         else:
             p_values = parameters_values
-        super().__init__(model, parameters=p, parameters_values=p_values)
+        #
+        # bypass symbolic computation of the spectrum
+        spectrum = _analytical_spectrum_high[model]
+        #
+        self.stationary = stationary
+        if stationary:
+            spectrum = spectrum + _analytical_spectrum_high["stationary"]
+        else:
+            #p["Us"] = 0
+            p.pop("Us", None)
+            p_values.pop("Us", None)
+        #
+        super().__init__(model,
+                         parameters=p,
+                         parameters_values=p_values,
+                         analytical_spectrum=spectrum,
+                         )
 
     def init_autocorrelation(self):
         if self.model=='exponential':
-            R = self.p['U']**2 * exp(-abs(tau)/self.p['T']) \
-                * cos(self.p['sigma']*tau)
+            R = (self.p['U']**2 * exp(-abs(tau)/self.p['T'])
+                 * cos(self.p['sigma']*tau)
+                 )
         elif self.model=='gaussian':
             R = self.p['U']**2 * exp(-(tau/self.p['T'])**2) \
                 * cos(self.p['sigma']*tau)
         else:
             R = tau*0
+        # add stationary component
+        if self.stationary:
+            R = R + self.p['Us']**2 * cos(self.p['sigma']*tau)
         return R
 
     def generate_tseries(self, **kwargs):
@@ -257,7 +377,7 @@ class high_frequency_signal(signal):
             name='high'
         if self.model=='exponential':
             p = dict(time=(100,1/24.),
-                     tau=_default_high_values['T'],
+                     T=_default_high_values['T'],
                      sigma=_default_high_values['sigma'],
                      rms=1.,
                      )
@@ -272,7 +392,6 @@ class high_frequency_signal(signal):
                               )
                       .rename(name)
                       )
-            # should rename tau into T here
             da = da.assign_attrs(sigma=p['sigma'])
         return da
 
@@ -291,7 +410,13 @@ def add(*args, model='sum', labels=None, weights=None, auto2spec=True):
                 R = R.subs(s, sy.Symbol(str(s)+'_'+l, positive=s.is_positive))
         out.autocorrelation = out.autocorrelation + R
     # update spectrum
-    out.update_spectrum()
+    #out.update_spectrum()
+    for a, l in zip(args, labels):
+        E = a.spectrum.copy()
+        for s in E.free_symbols:
+            if str(s)!='omega':
+                E = E.subs(s, sy.Symbol(str(s)+'_'+l, positive=s.is_positive))
+        out.spectrum = out.spectrum + E
     # update parameter list
     out.update_parameters()
     # update lambdas
