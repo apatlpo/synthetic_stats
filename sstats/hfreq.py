@@ -41,7 +41,7 @@ _default_high_values = dict(T=10, U=1., Us=1., sigma=2.*rad)
 
 
 def _xr_tau(bounds=None,
-            N=100,
+            N=1000,
            ):
     if bounds is None:
         bounds = _default_tau_bounds
@@ -53,7 +53,7 @@ def _xr_tau(bounds=None,
     return da
 
 def _xr_tau(bounds=None,
-            N=100,
+            N=1000,
             ):
     if bounds is None:
         bounds = _default_tau_bounds
