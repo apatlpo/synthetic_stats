@@ -202,10 +202,11 @@ def binomial(time, n=1, p=.5, draws=1, **kwargs):
         x = x.assign_attrs(p=p)
     return x
 
-def _exp_autocorr(T, rms, time, draws=1, dt=None, **kwargs):
+def _exp_autocorr(T, rms, time, draws=1, dt=None, seed=None, **kwargs):
     """ exp_autocorr core code. See exp_autocorr doc
     """
     #time = float(time.squeeze())
+    np.random.seed(seed)
     arma = sm.tsa.arma_generate_sample
     out = np.zeros((T.size, rms.size, draws, time.size))
     for i, t in enumerate(T[:,0,0,0]):
@@ -257,6 +258,16 @@ def exp_autocorr(time, T, rms, draws=1, **kwargs):
 
 # ---------------------------- analysis ---------------------------------------
 
+
+def correlate_np(v1, v2, maxlag=None, **kwargs):
+    if maxlag is None:
+        return np.correlate(v1, v2, **kwargs)/v1.size
+    R = np.correlate(v1[maxlag:-maxlag],
+                     v2[:],
+                     mode="valid",
+                     )
+    return R/v1[maxlag:-maxlag].size
+
 def _correlate(v1, v2, dt=None, detrend=False, ufunc=True, **kwargs):
     ''' Compute a lagged correlation between two time series
     These time series are assumed to be regularly sampled in time
@@ -280,7 +291,9 @@ def _correlate(v1, v2, dt=None, detrend=False, ufunc=True, **kwargs):
 
     assert v1.shape == v2.shape
 
-    _correlate = np.correlate
+    #_correlate = np.correlate
+    _correlate = correlate_np
+
     if detrend:
         v1 = signal.detrend(v1)
         v2 = signal.detrend(v2)
@@ -301,10 +314,11 @@ def _correlate(v1, v2, dt=None, detrend=False, ufunc=True, **kwargs):
             vv[ii + jj] = f[jj]
 
     # select only positive lags
-    vv = vv[...,int(vv.shape[-1]/2):]
+    vv = vv[..., int(vv.shape[-1]/2):]
 
     # normalized by number of points
-    vv = vv/v1.shape[-1]
+    #vv = vv/v1.shape[-1]
+    # normalization done in correlate_np
 
     if ufunc:
         return vv
@@ -316,32 +330,42 @@ def _correlate(v1, v2, dt=None, detrend=False, ufunc=True, **kwargs):
             vv = vv.transpose((1,0))
         return lags, vv
 
-def correlate(v1, v2, lags=None, **kwargs):
+def correlate(v1, v2, lags=None, maxlag=None, **kwargs):
     """ Lagged cross-correlation with xarray objects
 
     Parameters:
     -----------
     v1, v2: xr.DataArray
         Input arrays, need to have a dimension called 'time'
-    detrend: boolean
-        Detrend or not arrays
+    lags: np.array
+        Array of lags in input array time units
+    maxlag: float, optional
+        Maximum lag in input arrays time units
+    **kwargs:
+        Passed to np.correlate
     """
 
     v1 = v1.chunk({'time': -1})
     v2 = v2.chunk({'time': -1})
-    dt = (v1.time[1]-v1.time[0]).values
+
+    _kwargs = dict(**kwargs)
+    _kwargs["dt"] = (v1.time[1]-v1.time[0]).values
+
+    if maxlag is not None:
+        _kwargs["maxlag"] = int(maxlag/_kwargs["dt"])
 
     if lags is None:
         _v1 = v1.isel(**{d: slice(0,2) for d in v1.dims if d is not 'time'})
         _v2 = v2.isel(**{d: slice(0,2) for d in v2.dims if d is not 'time'})
-        lags, _ = _correlate(_v1, _v2, dt=dt, ufunc=False, **kwargs)
-        return correlate(v1, v2, lags=lags, **kwargs)
+        lags, _ = _correlate(_v1, _v2, ufunc=False, **_kwargs)
+        return correlate(v1, v2, lags=lags, maxlag=maxlag, **kwargs)
+
     gufunc_kwargs = dict(output_sizes={'lags': lags.size})
     C = xr.apply_ufunc(_correlate, v1, v2,
                 dask='parallelized', output_dtypes=[v1.dtype],
                 input_core_dims=[['time'], ['time']],
                 output_core_dims=[['lags']],
                 dask_gufunc_kwargs=gufunc_kwargs,
-                kwargs=kwargs,
+                kwargs=_kwargs,
                 )
     return C.assign_coords(lags=lags).rename(v1.name+'_'+v2.name)
