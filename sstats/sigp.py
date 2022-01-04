@@ -87,10 +87,10 @@ def correlate(v1, v2, lags=None, maxlag=None, **kwargs):
     -----------
     v1, v2: xr.DataArray
         Input arrays, need to have a dimension called 'time'
-    lags: np.array
+    !working? ! lags: np.array
         Array of lags in input array time units
-    maxlag: float, optional
-        Maximum lag in input arrays time units
+    !not working ! maxlag: float, optional
+        Maximum lag in input arrays, index units
     **kwargs:
         Passed to np.correlate
     """
@@ -99,16 +99,17 @@ def correlate(v1, v2, lags=None, maxlag=None, **kwargs):
     v2 = v2.chunk({'time': -1})
 
     _kwargs = dict(**kwargs)
-    _kwargs["dt"] = (v1.time[1]-v1.time[0]).values
+    _kwargs["dt"] = float( (v1.time[1]-v1.time[0]).values )
 
-    if maxlag is not None:
-        _kwargs["maxlag"] = int(maxlag/_kwargs["dt"])
+    #if maxlag is not None:
+    #    _kwargs["maxlag"] = int(maxlag/_kwargs["dt"])
+    #print(_kwargs["maxlag"])
 
     if lags is None:
         _v1 = v1.isel(**{d: slice(0,2) for d in v1.dims if d is not 'time'})
         _v2 = v2.isel(**{d: slice(0,2) for d in v2.dims if d is not 'time'})
         lags, _ = _correlate(_v1, _v2, ufunc=False, **_kwargs)
-        return correlate(v1, v2, lags=lags, maxlag=maxlag, **kwargs)
+        return correlate(v1, v2, lags=lags, **_kwargs)
 
     gufunc_kwargs = dict(output_sizes={'lags': lags.size})
     C = xr.apply_ufunc(_correlate, v1, v2,

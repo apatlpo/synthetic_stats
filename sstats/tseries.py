@@ -268,6 +268,8 @@ def _exp_autocorr(T, rms, time, *args, dt=None, seed=None, **kwargs):
     #time = float(time.squeeze())
     np.random.seed(seed)
     arma = sm.tsa.arma_generate_sample
+    if not isinstance(time, int):
+        time = time.size
     extra = (time,) + tuple(a.size for a in args)
     out = np.zeros((T.size, rms.size,)+extra)
     for i, t in enumerate(T.flatten()):
@@ -286,6 +288,9 @@ def exp_autocorr(time, T, rms, draws=1, dummy_dims=None, **kwargs):
     """Generate exponentially correlated time series
     Implemented via ARMA
     x_{t} = x_{t-1} * (1-dt/T) + \sqrt{2*dt/T}*rms *e_t
+
+    see Sawford 1991, Reynolds number effects in Lagrangian stochastic models
+    of turbulent dispersion
 
     Parameters:
     -----------
