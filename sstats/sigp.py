@@ -267,8 +267,8 @@ def filt(v, h, hilbert=False):
                     dask_gufunc_kwargs = gufunc_kwargs,
                          )
 
-def bpass_hilbert(ds, omega, hbandwidth, T, ftype="firwin"):
-    """ create filter, filter time series, hilbert transform
+def bpass_demodulate(ds, omega, hbandwidth, T, ftype="firwin"):
+    """ create filter, filter time series, hilbert transform, demodulate
 
     ds: xr.DataArray
         input time series, "time" should be the time dimension
