@@ -4,24 +4,22 @@ Download Miniconda3 (i.e. for python3) from the [conda website](https://conda.io
 ```
 bash Miniconda3-latest-Linux-x86_64.sh
 bash
-conda update conda
+conda update conda # command to be updated?
 conda create -n stats -c conda-forge python=3.8 dask dask-jobqueue \
             xarray zarr netcdf4 python-graphviz \
             jupyterlab ipywidgets \
-            cartopy geopandas scikit-learn seaborn \
-            hvplot geoviews datashader nodejs \
-            intake-xarray gcsfs \
-            cmocean gsw \
-            pytide pyinterp \
-            statsmodels xhistogram \
+            cartopy geopandas \
+            seaborn \
+            scikit-learn scikit-gstat \
+            statsmodels pytorch \
+            xhistogram \
             sympy
 conda activate stats
 pip install git+https://github.com/xgcm/xrft.git
 conda install pywavelets
+pip install kymatio
 cd synthetic_stats; pip install -e .
-jupyter labextension install @jupyter-widgets/jupyterlab-manager \
-                             @pyviz/jupyterlab_pyviz \
-                             jupyter-leaflet
+jupyter labextension install @jupyter-widgets/jupyterlab-manager
 cp launch/jobqueue.yaml launch/distributed.yaml ~/.config/dask/
 ```
 
@@ -78,7 +76,7 @@ conda info --envs
 ```
 Delete an environment
 ```
-conda remove --name equinox --all
+conda remove --name stats --all
 ```
 View a list of packages and versions installed in an environmentSearch for a package
 ```

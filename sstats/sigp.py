@@ -8,8 +8,7 @@ import xrft
 
 # ---------------------------- cross-correlations ------------------------------
 
-
-def correlate_np(v1, v2, maxlag=None, **kwargs):
+def correlate_np_old(v1, v2, maxlag=None, **kwargs):
     if maxlag is None:
         return np.correlate(v1, v2, **kwargs)/v1.size
     R = np.correlate(v1[maxlag:-maxlag],
@@ -17,6 +16,60 @@ def correlate_np(v1, v2, maxlag=None, **kwargs):
                      mode="valid",
                      )
     return R/v1[maxlag:-maxlag].size
+
+def correlate_np(u, v,
+              biased=True,
+              one_sided=True,
+              weights=False,
+             ):
+    """ custom correlation
+
+      corr[lag] = 1/w(lag) sum_lag u(t) x v(t+lag)
+
+
+    Parameters
+    ----------
+    u, v: np.array
+        Input timeseries, must be of the same length
+    biased: boolean, optional
+        Returns a biased estimation of the correlation. Default is True
+            Biased: corr[lag] = 1/N sum ...
+            Unbiased: corr[lag] = 1/(N-lag) sum ...
+    one_sided: boolean, optional
+        Outputs only positive lag. Default is True
+    weights: boolean, optional
+        Returns weights. Default is False
+
+    Returns
+    -------
+    c: np.array
+        Autocorrelation
+    lag: np.array of int
+        Lag in index (nondimensional units)
+    w: np.array of int
+        Weights used for the calculation of the autocorrelation
+
+    """
+    n = u.size
+    assert u.size==v.size, "input vectors must have the same size"
+    # build arrays of weights
+    if biased:
+        w = n
+    else:
+        _w = np.arange(1,n+1)
+        w = np.hstack([_w, _w[-2::-1]])
+    #
+    c = np.correlate(u, v, mode="full") / w
+    lag = np.arange(-n+1,n)
+    #
+    if one_sided:
+        c, lag = c[n-1:], lag[n-1:]
+        if not biased:
+            w = w[n-1:]
+    if weights:
+        return c, lag, w
+    else:
+        return c, lag
 
 def _correlate(v1, v2, dt=None, detrend=False, ufunc=True, **kwargs):
     ''' Compute a lagged correlation between two time series
@@ -42,29 +95,35 @@ def _correlate(v1, v2, dt=None, detrend=False, ufunc=True, **kwargs):
     assert v1.shape == v2.shape
 
     #_correlate = np.correlate
-    _correlate = correlate_np
+    #_correlate = correlate_np
 
     if detrend:
         v1 = signal.detrend(v1)
         v2 = signal.detrend(v2)
 
-    _kwargs = {'mode': 'same'}
-    _kwargs.update(**kwargs)
+    #_kwargs = {'mode': 'same'}
+    #_kwargs.update(**kwargs)
 
     # loop over all dimensions but the last one to apply correlate
-    Ni = v1.shape[:-1]
-    # infer number of lags from dummy computation
-    i0 = tuple(0 for i in Ni) + np.s_[:,]
-    f = _correlate(v1[i0], v2[i0], **_kwargs)
-    vv = np.full(Ni+f.shape, np.NaN, dtype=v1.dtype)
-    for ii in np.ndindex(Ni):
-        f = _correlate(v1[ii + np.s_[:,]], v2[ii + np.s_[:,]], **_kwargs)
-        Nj = f.shape
-        for jj in np.ndindex(Nj):
-            vv[ii + jj] = f[jj]
+    if len(v1.shape)==1:
+        vv, lags = correlate_np(v1, v2, **kwargs)
+    else:
+        Ni = v1.shape[:-1]
+        # infer number of lags from dummy computation
+        i0 = tuple(0 for i in Ni) + np.s_[:,]
+        f, lags = correlate_np(v1[i0], v2[i0], **kwargs)
+        vv = np.full(Ni+f.shape, np.NaN, dtype=v1.dtype)
+        for ii in np.ndindex(Ni):
+            f, _lags = correlate_np(v1[ii + np.s_[:,]],
+                                    v2[ii + np.s_[:,]],
+                                    **kwargs,
+                                    )
+            Nj = f.shape
+            for jj in np.ndindex(Nj):
+                vv[ii + jj] = f[jj]
 
     # select only positive lags
-    vv = vv[..., int(vv.shape[-1]/2):]
+    #vv = vv[..., int(vv.shape[-1]/2):]
 
     # normalized by number of points
     #vv = vv/v1.shape[-1]
@@ -73,14 +132,18 @@ def _correlate(v1, v2, dt=None, detrend=False, ufunc=True, **kwargs):
     if ufunc:
         return vv
     else:
-        lags = np.arange(vv.shape[-1])*dt
+        #lags = np.arange(vv.shape[-1])*dt
         if len(vv.shape)==3:
             vv = vv.transpose((2,1,0))
         elif len(vv.shape)==2:
             vv = vv.transpose((1,0))
-        return lags, vv
+        return lags*dt, vv
 
-def correlate(v1, v2, lags=None, maxlag=None, **kwargs):
+def correlate(v1, v2,
+              lags=None,
+              #maxlag=None,
+              **kwargs,
+              ):
     """ Lagged cross-correlation with xarray objects
 
     Parameters:
@@ -95,6 +158,11 @@ def correlate(v1, v2, lags=None, maxlag=None, **kwargs):
         Passed to np.correlate
     """
 
+    # make sure time is last
+    dims_ordered = [d for d in v1.dims if d!="time"]+ ["time"]
+    v1 = v1.transpose(*dims_ordered)
+    v2 = v2.transpose(*dims_ordered)
+    # rechunk along time
     v1 = v1.chunk({'time': -1})
     v2 = v2.chunk({'time': -1})
 
@@ -106,8 +174,8 @@ def correlate(v1, v2, lags=None, maxlag=None, **kwargs):
     #print(_kwargs["maxlag"])
 
     if lags is None:
-        _v1 = v1.isel(**{d: slice(0,2) for d in v1.dims if d is not 'time'})
-        _v2 = v2.isel(**{d: slice(0,2) for d in v2.dims if d is not 'time'})
+        _v1 = v1.isel(**{d: slice(0,2) for d in v1.dims if d!='time'})
+        _v2 = v2.isel(**{d: slice(0,2) for d in v2.dims if d!='time'})
         lags, _ = _correlate(_v1, _v2, ufunc=False, **_kwargs)
         return correlate(v1, v2, lags=lags, **_kwargs)
 
@@ -120,6 +188,86 @@ def correlate(v1, v2, lags=None, maxlag=None, **kwargs):
                 kwargs=_kwargs,
                 )
     return C.assign_coords(lags=lags).rename(v1.name+'_'+v2.name)
+
+def effective_DOF(sigma, dt, N):
+    """ Returns effective degrees of freedom (DOF) for the sample mean
+    and variance along with the small sample scaling factor for variance
+    References: Bailey and Hammersley 1946, Priestley chapter 5.3.2
+
+    Parameters
+    ----------
+    sigma: lambda, xr.DataArray
+        Autocorrelation function
+    dt: float
+        sampling interval
+    N: int
+        Timeseries length
+    Returns
+    -------
+    mean_Ne: float
+        Sample mean effective DOF
+    variance_Ne: float
+        Sample variance effective DOF
+    variance_scale: float
+        Sample variance scale correction
+
+    """
+
+    if isinstance(sigma, xr.DataArray):
+        # transform to lambda
+        assert False, "not implemented yet"
+
+    ## sample mean
+    # Priestley (5.3.5), general
+    lags = np.arange(-N-1,N)
+    mean_Ne = N / np.sum( ( 1-np.abs(lags)/N )*sigma(lags*dt) )
+
+    ## sample variance
+    # Priestley (5.3.23) with r=0, Gaussian assumption
+    #lags = np.arange(-N-1,N)
+    variance_Ne = N / np.sum( ( 1-np.abs(lags)/N ) * sigma(lags*dt)**2 )
+    # small sample scaling factor - Bayley and Hammersley 1946 (10)
+    variance_scale = mean_Ne * (N-1) /N /(mean_Ne-1)
+
+    return mean_Ne, variance_Ne, variance_scale
+
+from numba import float64, guvectorize
+
+@guvectorize("(float64[:], float64[:])", "(n) -> (n)", nopython=True)
+def _barlett_np_gufunc(R, V):
+    """ Autocovariance estimate variance
+    Pierce 5.3.23
+    """
+    N = R.shape[0]
+    for r in range(N):
+        V[r] = (1 - r/N) * 2 * R[0]**2 /N
+        for m in range(N-r-1):
+            V[r] += 2*( 1 - (m+r)/N ) * ( R[m]**2 + R[m+r]*R[abs(m-r)] ) /N
+
+def barlett(da, dim):
+    """ Variance estimate for the autocovariance estimate
+    See Pierce 5.3.23
+
+    Parameters
+    ----------
+    da: xr.DataArray
+        Input autocovariance
+    dim: str
+        Lag dimension
+    """
+
+    V = xr.apply_ufunc(
+        _barlett_np_gufunc,  # first the function
+        da,  # now arguments in the order expected by 'interp1_np'
+        input_core_dims=[[dim],],  # list with one entry per arg
+        output_core_dims=[[dim]],  # returned data has one dimension
+        dask="parallelized",
+        output_dtypes=[
+            da.dtype
+        ],
+    )
+
+    return V.rename(da.name+"_var")
 
 
 # ---------------------------- spectra-- ---------------------------------------
@@ -178,7 +326,7 @@ def spectrum_welch(v, T=60, **kwargs):
     if "return_onesided" in kwargs and kwargs["return_onesided"]:
         Nb = int(Nb/2)+1
     #
-    f, _ = welch(v.isel(**{d: 0 for d in v.dims if d is not "time"}).values,
+    f, _ = welch(v.isel(**{d: 0 for d in v.dims if d!="time"}).values,
                  ufunc=False, **kwargs)
     #
     E = xr.apply_ufunc(

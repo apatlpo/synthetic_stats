@@ -281,6 +281,7 @@ def _exp_autocorr(T, rms, time, *args, dt=None, seed=None, **kwargs):
                                 extra,
                                 axis=0,
                                 scale=np.sqrt(2*dt/t)*r,
+                                **kwargs,
                                )
     return out
 
