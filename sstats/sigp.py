@@ -2,7 +2,7 @@ import numpy as np
 import xarray as xr
 
 from scipy import signal
-from scipy.optimize import minimize
+from scipy.optimize import minimize, LbfgsInvHessProduct
 
 from numba import float64, guvectorize
 
@@ -314,10 +314,13 @@ def _minimize(*args, x0=None, fun=None, **kwargs):
     in minimize_xr
     """
     res = minimize(fun, x0, args=args, **kwargs)
+    #assert False, res["hess_inv"]
+    if isinstance(res["hess_inv"], LbfgsInvHessProduct):
+        res["hess_inv"] = res["hess_inv"].todense()
     res["hess_inv"] = np.diag(res["hess_inv"])
     return tuple(res[o] for o in _minimize_outputs)
 
-def minimize_xr(fun, ds, params, variables, dim, ):
+def minimize_xr(fun, ds, params, variables, dim, **kwargs):
     """ xarray wrapper around minimize
 
     Parameters
@@ -346,7 +349,7 @@ def minimize_xr(fun, ds, params, variables, dim, ):
         vectorize=True,
         dask="parallelized",
         output_dtypes=[np.float64]*len(_minimize_outputs),
-        kwargs=dict(x0=_x0, fun=fun),
+        kwargs=dict(x0=_x0, fun=fun, **kwargs),
     )
 
     ds_min = xr.merge([r.rename(o) for r, o in zip(res, _minimize_outputs)])
