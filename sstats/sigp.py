@@ -2,6 +2,9 @@ import numpy as np
 import xarray as xr
 
 from scipy import signal
+from scipy.optimize import minimize
+
+from numba import float64, guvectorize
 
 import xrft
 
@@ -231,8 +234,6 @@ def effective_DOF(sigma, dt, N):
 
     return mean_Ne, variance_Ne, variance_scale
 
-from numba import float64, guvectorize
-
 @guvectorize("(float64[:], float64[:])", "(n) -> (n)", nopython=True)
 def _barlett_np_gufunc(R, V):
     """ Autocovariance estimate variance
@@ -269,6 +270,89 @@ def barlett(da, dim):
 
     return V.rename(da.name+"_var")
 
+@guvectorize("(float64[:], float64[:])", "(n) -> (n)", nopython=True)
+def _svariance_np_gufunc(u, svar):
+    """ Semi-variance estimate
+    """
+    N = u.shape[0]
+    for r in range(N):
+        svar[r] = 0.5*np.sum((u[r:]-u[:N-r])**2)/(N-r)
+
+def svariance(da, dim):
+    """ Semi-variance estimate
+
+    Parameters
+    ----------
+    da: xr.DataArray
+        Input time series
+    dim: str
+        Time dimension
+    """
+
+    dt = float(da[dim][1]-da[dim][0])
+
+    V = xr.apply_ufunc(
+        _svariance_np_gufunc,  # first the function
+        da,  # now arguments in the order expected by 'interp1_np'
+        input_core_dims=[[dim],],  # list with one entry per arg
+        output_core_dims=[["lags"]],  # returned data has one dimension
+        dask="parallelized",
+        output_dtypes=[
+            da.dtype
+        ],
+    )
+
+    V["lags"] = ("lags", np.arange(V["lags"].size)*dt)
+
+    return V.rename(da.name+"_svar")
+
+
+_minimize_outputs = ["x", "hess_inv", "jac", "fun"]
+
+def _minimize(*args, x0=None, fun=None, **kwargs):
+    """ wrapper around minimized tailored for apply_ufunc call
+    in minimize_xr
+    """
+    res = minimize(fun, x0, args=args, **kwargs)
+    res["hess_inv"] = np.diag(res["hess_inv"])
+    return tuple(res[o] for o in _minimize_outputs)
+
+def minimize_xr(fun, ds, params, variables, dim, ):
+    """ xarray wrapper around minimize
+
+    Parameters
+    ----------
+    fun: method
+        signature must look like: fun(x, *args)
+    ds: xr.Dataset
+        dataset containing `args` used by fun
+    params: dict
+        dict of parameters that will be fitted with values
+        corresponding to initial guesses
+    variables: list
+        list of variables passed as `args` to fun
+    dim: str
+        core dimension passed to apply_ufunc
+    """
+
+    labels = list(params)
+    _x0 = np.array([v for k, v in params.items()])
+
+    res = xr.apply_ufunc(
+        _minimize,  # first the function
+        *[ds[v] for v in variables],
+        input_core_dims=[[dim],]*len(variables),
+        output_core_dims=[["parameters"]]*3+[[]],
+        vectorize=True,
+        dask="parallelized",
+        output_dtypes=[np.float64]*len(_minimize_outputs),
+        kwargs=dict(x0=_x0, fun=fun),
+    )
+
+    ds_min = xr.merge([r.rename(o) for r, o in zip(res, _minimize_outputs)])
+    ds_min["parameters"] = ("parameters", labels)
+
+    return ds_min
 
 # ---------------------------- spectra-- ---------------------------------------
 
