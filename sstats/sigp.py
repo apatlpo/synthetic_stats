@@ -1,8 +1,9 @@
 import numpy as np
 import xarray as xr
 
-from scipy import signal
+from scipy import signal, linalg
 from scipy.optimize import minimize, LbfgsInvHessProduct
+from scipy.stats import chi2
 
 from numba import float64, guvectorize
 
@@ -314,7 +315,6 @@ def _minimize(*args, x0=None, fun=None, **kwargs):
     in minimize_xr
     """
     res = minimize(fun, x0, args=args, **kwargs)
-    #assert False, res["hess_inv"]
     if isinstance(res["hess_inv"], LbfgsInvHessProduct):
         res["hess_inv"] = res["hess_inv"].todense()
     res["hess_inv"] = np.diag(res["hess_inv"])
@@ -342,7 +342,7 @@ def minimize_xr(fun, ds, params, variables, dim, **kwargs):
     _x0 = np.array([v for k, v in params.items()])
 
     res = xr.apply_ufunc(
-        _minimize,  # first the function
+        _minimize,
         *[ds[v] for v in variables],
         input_core_dims=[[dim],]*len(variables),
         output_core_dims=[["parameters"]]*3+[[]],
@@ -526,3 +526,172 @@ def bpass_demodulate(ds, omega, hbandwidth, T, ftype="firwin"):
     ds['exp'] = exp
 
     return ds, h, h_hat, w
+
+# ---------------------------- Max Likelihood ----------------------------------
+
+def likelihood(u, t, c, *args,
+              mu=None,
+              sigma0=None,
+              jitter=None,
+              debug=False,
+             ):
+    """ evaluate the log likelihood
+
+    Parameters
+    ----------
+    u: np.array
+        data time series
+    t: np.array
+        time series
+    c: method
+        returns the autocorrelation (1 at lag 0) as a function of lag and args:
+            c(lag, *args)
+    *args: floats
+        parameters required to evaluate the autocorrelation with c
+    mu: float, optional
+        Mean of u time series.
+        Estimated via analytical profiling if not provided
+    sigma0: float, optional
+        Variance of u time series.
+        Estimated via analytical profiling if not provided
+    """
+
+    if isinstance(u, xr.DataArray):
+        u = u.values
+    if isinstance(t, xr.DataArray):
+        t = t.values
+
+    N = u.size
+
+    C = c(t[:,None]-t[None,:], *args)
+
+    # add jitter
+    if jitter:
+        C0 = C
+        flag=True
+        while flag:
+            assert jitter<0, "jitter is larger than 0, stops"
+            try:
+                C = C0 + np.eye(C.shape[0])* 10**jitter
+                # Cholesky decomposition
+                L_solve = linalg.cho_factor(C, lower=True)
+                flag=False
+                #print(f"jitter = 10**{jitter}")
+            except:
+                jitter+=+1
+    else:
+        L_solve = linalg.cho_factor(C, lower=True)
+
+    # solve for mu
+    if mu is None:
+        ones = np.ones(C.shape[0])
+        w = linalg.cho_solve(L_solve, ones)
+        W = w.sum()
+        mu_hat = np.dot(w, u) / W
+    else:
+        mu_hat = mu
+
+    up = u - mu_hat
+
+    # estimate variance sigma0
+    if sigma0 is None:
+        Cinv_u = linalg.cho_solve(L_solve, up)
+        sigma0_hat = np.dot(up, Cinv_u) / N
+    else:
+        sigma0_hat = sigma0
+
+    # estimate the log likelihood function
+    s, logdet = np.linalg.slogdet(C)
+    pL = -1/2 * logdet - N/2*np.log(sigma0_hat) - N/2
+    # note that np.linalg.det(C) would output 0 here, hence the call to slogdet
+
+    out = dict(L=pL,
+               mu=mu_hat,
+               sigma0=sigma0_hat,
+               jitter=jitter,
+              )
+    if mu is None:
+        out["mu_err"] = np.sqrt( W / sigma0_hat )
+    if sigma0 is None:
+        out["sigma0_err"] = sigma0_hat / np.sqrt(N)
+
+    if debug:
+        out.update(C=C, Cinv=Cinv)
+
+    return out
+
+def likelihood_only(*args, **kwargs):
+    # wrapper to feed np.vectorize
+    return likelihood(*args, **kwargs)["L"]
+
+likelihood_vec = np.vectorize(likelihood_only, excluded=[0,1,2])
+
+_likelihood_outputs = ["L", "mu", "sigma0", "jitter",]
+
+def likelihood_xr(u, c, params, *args, **kwargs):
+    """ Compute the likelihood and profiled parametes (mu, sigma0)
+
+    Parameters
+    ----------
+    u: xr.DataArray
+        Input timeseries
+    c: Method
+        Autocorrelation, signature: c(lag, *args)
+    params: dict
+        Dict of autocorrelation parameters values (need to be arrays)
+        will be passed to c (!! order issue at the moment !!)
+    *args: floats
+        Other parameters fed to the autocorrelation
+    **kwargs: passed to likelihood method (see associated doc)
+    """
+
+    dim = "time" # core dimension
+    _params = xr.Dataset(params) # dict to xarray dataset
+
+    def _likelihood_wrapper(u, time,  *args, outputs=None, **kwargs):
+        new_args = tuple(float(arg) for arg in args)
+        d = likelihood(u, time, c, *new_args, **kwargs)
+        return tuple(d[o] for o in outputs)
+
+    outputs = _likelihood_outputs
+    if "mu" not in kwargs:
+        outputs = outputs + ["mu_err"]
+    if "sigma0" not in kwargs:
+        outputs = outputs + ["sigma0_err"]
+
+    res = xr.apply_ufunc(_likelihood_wrapper,
+                         u, u.time, *[_params[p] for p in params],
+                         input_core_dims=[[dim], [dim]] + [[]]*len(params),
+                         output_core_dims=[[]]*len(outputs),
+                         vectorize=True,
+                         dask="parallelized",
+                         output_dtypes=[np.float64]*len(outputs),
+                         kwargs=dict(outputs=outputs, **kwargs),
+                        )
+
+    ds = xr.merge([r.rename(o) for r, o in zip(res, outputs)])
+
+    ds.attrs.update(**kwargs)
+
+    return ds
+
+def likelihood_confidence_ratio(alpha=0.1):
+    """ Ratio used to define the confidence ratio
+        Prob(L>L_max/c) = 1 - alpha
+
+    Pawitan 2.5
+    """
+    return np.exp(-chi2.ppf(1-alpha,1)/2)
+
+def compute_hessian_diag(u, t, c, params, deltas, **kwargs):
+    """ Manually compute the Hessian diagonal of the log likelihood
+    """
+
+    I = {}
+    for p, value in params.items():
+        _params = dict(**params)
+        _params[p] = [value-deltas[p], value, value+deltas[p]]
+        ds = likelihood_xr(u, c, _params, **kwargs)
+        I[p] = -float(ds.L.differentiate(p).differentiate(p).sel(**{p: value}))
+
+    return I

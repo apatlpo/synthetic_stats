@@ -327,3 +327,73 @@ def exp_autocorr(time, T, rms, draws=1, dummy_dims=None, **kwargs):
         x = x.assign_attrs(rms=rms)
 
     return x
+
+def _general_autocorr(rms, time, *args, c=None, dt=None, seed=None, **kwargs):
+    """ exp_autocorr core code. See exp_autocorr doc
+    """
+    # prepare Cholesky decomposition
+    t = time.squeeze()
+    sigma = c( abs(t[:,None] - t[None,:]) )
+    #assert False, (t.shape, t, sigma)
+    flag = True
+    jitter_exp=-20.
+    while flag:
+        try:
+            L = np.linalg.cholesky(sigma
+                                   + np.eye(time.size) *10**jitter_exp,
+                                   )
+            flag=False
+        except:
+            jitter_exp+=1
+    scale = rms/np.sqrt(c(0))
+    #
+    rng = np.random.default_rng(seed=seed)
+    if not isinstance(time, int):
+        time = time.size
+    extra = (time,) + tuple(a.size for a in args)
+    out = np.zeros((rms.size,)+extra)
+    for j, r in enumerate(rms.flatten()):
+        noise = rng.normal(0., 1., extra)
+        out[j,...] = np.einsum("ij,j...->i...", L, noise)*scale
+    return out
+
+def general_autocorr(time, c, rms, draws=1, dummy_dims=None, **kwargs):
+    """Generate a time series that will verify some autocorrelation
+    Implemented with Cholesky decomposition, see:
+    https://github.com/apatlpo/synthetic_stats/blob/master/sandbox/autocorrelation_cholesky.ipynb
+
+    Parameters:
+    -----------
+    time: int, np.ndarray, tuple
+        Number of time steps, time array, tuple (T, dt)
+    c: lambda
+        Autocorrelation, signature: c(tau)
+    rms: float, iterable
+        Desired rms (not exact for each realization)
+    draws: int, optional
+        Size of the ensemble, default to 1
+    seed: int, optional
+        numpy seed
+    """
+    _dummy_dims = dict(draw=draws)
+    if dummy_dims is not None:
+        _dummy_dims.update(**dummy_dims)
+
+    if isinstance(time, tuple):
+        dt = time[1]
+    else:
+        dt = time[1]-time[0]
+
+    assert c is not None, "An autocorrelation c must be passed"
+
+    x = wrapper(_general_autocorr,
+                time,
+                params={'rms': rms,},
+                dummy_dims=_dummy_dims,
+                dt=dt,
+                c=c,
+                **kwargs)
+    if 'rms' not in x.dims:
+        x = x.assign_attrs(rms=rms)
+
+    return x
