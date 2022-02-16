@@ -24,6 +24,7 @@ def get_cmap_colors(Nc, cmap='plasma'):
 
 #----------------------- standard autocovariance models ------------------------
 
+# exponential covariance
 sigma_exp = lambda tau, sigma0, T: sigma0*np.exp(-abs(tau/T))
 gamma_exp = lambda tau, sigma0, T: sigma0 * (1 - np.exp(-abs(tau/T)))
 model_exp = dict(gamma = gamma_exp,
@@ -31,6 +32,7 @@ model_exp = dict(gamma = gamma_exp,
                  params = dict(sigma0=1, T=1),
                 )
 
+# gaussian covariance
 sigma_gaussian = lambda tau, sigma0, T: sigma0*np.exp(-abs(tau/T)**2)
 gamma_gaussian = lambda tau, sigma0, T: sigma0 * (1 - np.exp(-abs(tau/T)**2))
 model_gaussian = dict(gamma = gamma_gaussian,
@@ -38,6 +40,8 @@ model_gaussian = dict(gamma = gamma_gaussian,
                       params = dict(sigma0=1, T=1),
                      )
 
+# Matern covariance
+# exponential: kappa = 0.5, gaussian: kappa=infty
 sigma_matern = lambda tau, sigma0, T, kappa: ( sigma0 * 2**(1-kappa) /gamma(kappa)
         *(tau/T)**kappa * kv(kappa, abs(tau/T) ) )
 gamma_matern = lambda tau, sigma0, T, kappa: sigma0 * (1 - ( sigma0 * 2**(1-kappa) /gamma(kappa)

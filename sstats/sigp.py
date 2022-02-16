@@ -564,6 +564,8 @@ def likelihood(u, t, c, *args,
     N = u.size
 
     C = c(t[:,None]-t[None,:], *args)
+    # Matern covariance is NaN at the origin
+    C = np.nan_to_num(C, nan=1)
 
     # add jitter
     if jitter:
