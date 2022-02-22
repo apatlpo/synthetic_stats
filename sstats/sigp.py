@@ -533,7 +533,7 @@ def likelihood(u, t, c, *args,
               mu=None,
               sigma0=None,
               jitter=None,
-              debug=False,
+              decomposed=False,
              ):
     """ evaluate the log likelihood
 
@@ -554,6 +554,12 @@ def likelihood(u, t, c, *args,
     sigma0: float, optional
         Variance of u time series.
         Estimated via analytical profiling if not provided
+    jitter: int, optional
+        Add a "jitter" along the autocovariance 10^jitter
+        jitter is increased up until the Cholesky decomposition is successful
+    decomposed: boolean, optional
+        returns each terms that compose the log likelihood
+
     """
 
     if isinstance(u, xr.DataArray):
@@ -603,9 +609,13 @@ def likelihood(u, t, c, *args,
         sigma0_hat = sigma0
 
     # estimate the log likelihood function
-    s, logdet = np.linalg.slogdet(C)
-    pL = -1/2 * logdet - N/2*np.log(sigma0_hat) - N/2
-    # note that np.linalg.det(C) would output 0 here, hence the call to slogdet
+    #s, logdet = np.linalg.slogdet(C)
+    logdet = 2*np.log(np.diag(L_solve[0])).sum()
+    L = dict(L_logdet = -1/2 * logdet,
+             L_logsigma = - N/2*np.log(sigma0_hat),
+             L_N = - N/2,
+             )
+    pL = L["L_logdet"] + L["L_logsigma"] + L["L_N"]
 
     out = dict(L=pL,
                mu=mu_hat,
@@ -617,8 +627,8 @@ def likelihood(u, t, c, *args,
     if sigma0 is None:
         out["sigma0_err"] = sigma0_hat / np.sqrt(N)
 
-    if debug:
-        out.update(C=C, Cinv=Cinv)
+    if decomposed:
+        out.update(**L)
 
     return out
 
@@ -660,6 +670,8 @@ def likelihood_xr(u, c, params, *args, **kwargs):
         outputs = outputs + ["mu_err"]
     if "sigma0" not in kwargs:
         outputs = outputs + ["sigma0_err"]
+    if "decomposed" in kwargs and kwargs["decomposed"]:
+        outputs = outputs + ["L_logdet", "L_logsigma", "L_N"]
 
     res = xr.apply_ufunc(_likelihood_wrapper,
                          u, u.time, *[_params[p] for p in params],
