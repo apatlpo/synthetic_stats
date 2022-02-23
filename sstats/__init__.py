@@ -44,8 +44,8 @@ model_gaussian = dict(gamma = gamma_gaussian,
 # exponential: kappa = 0.5, gaussian: kappa=infty
 sigma_matern = lambda tau, sigma0, T, kappa: ( sigma0 * 2**(1-kappa) /gamma(kappa)
         *(tau/T)**kappa * kv(kappa, abs(tau/T) ) )
-gamma_matern = lambda tau, sigma0, T, kappa: sigma0 * (1 - ( sigma0 * 2**(1-kappa) /gamma(kappa)
-        *(tau/T)**kappa * kv(kappa, abs(tau/T) ) ))
+gamma_matern = lambda tau, sigma0, T, kappa: sigma0 * (1 - 2**(1-kappa) /gamma(kappa)
+        *(tau/T)**kappa * kv(kappa, abs(tau/T)) )
 model_matern = dict(gamma = gamma_matern,
                     sigma = sigma_matern,
                     params = dict(sigma0=1, T=1, kappa=0.5),

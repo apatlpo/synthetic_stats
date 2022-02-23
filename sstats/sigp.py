@@ -304,6 +304,7 @@ def svariance(da, dim):
     )
 
     V["lags"] = ("lags", np.arange(V["lags"].size)*dt)
+    V["N"] = ((V.lags.max() - V.lags)/dt + 1).astype(int)
 
     return V.rename(da.name+"_svar")
 
