@@ -433,6 +433,32 @@ def spectrum_welch(v, T=60, **kwargs):
 
 # ---------------------------- filtering ---------------------------------------
 
+def lowpass_filter(cutoff,
+                 numtaps,
+                 dt,
+                ):
+    ''' Low-pass filter: wrapper around scipy.signal.firwing
+
+    Parameters:
+    -----------
+    cutoff: float
+        cutoff frequency, units need to be cycle per time units
+    numptaps: int
+        window size in number of points
+    dt: float
+        days
+    '''
+    #
+    h = signal.firwin(numtaps,
+                      cutoff=[cutoff],
+                      pass_zero=True,
+                      fs=1./dt,
+                      scale=True,
+                     )
+    #
+    t = np.arange(numtaps)*dt
+    return h, t
+
 def bpass_filter(omega,
                  hbandwidth,
                  numtaps,
@@ -443,8 +469,6 @@ def bpass_filter(omega,
 
     Parameters:
     -----------
-    dt: float
-        days
     omega: float
         central frequency, units need to be cycle per time units
     hbandwidth: float
@@ -495,13 +519,17 @@ def convolve(x, h=None, hilbert=False):
 
 def filt(v, h, hilbert=False):
     output_dtype = complex if hilbert else float
-    gufunc_kwargs = dict(output_sizes={'time': len(v.time)})
+    #gufunc_kwargs = dict(output_sizes={d: v[d].size for d in v.dims},
+    #                     #output_sizes={'time': len(v.time)},
+    #                     #meta=v,
+    #                     )
     return xr.apply_ufunc(convolve, v, kwargs={'h': h, 'hilbert': hilbert},
-                    dask='parallelized', output_dtypes=[output_dtype],
+                    dask='parallelized',
+                    output_dtypes=[output_dtype],
                     input_core_dims=[['time']],
                     output_core_dims=[['time']],
-                    dask_gufunc_kwargs = gufunc_kwargs,
-                         )
+                    #dask_gufunc_kwargs = gufunc_kwargs,
+                    )
 
 def bpass_demodulate(ds, omega, hbandwidth, T, ftype="firwin"):
     """ create filter, filter time series, hilbert transform, demodulate

@@ -80,29 +80,37 @@ def wrapper(func,
         xr_chunks.update(**chunks)
     da_chunks = tuple(xr_chunks[d] for d in dims)
 
+    # Note: this should be overlhauled with xr.map_blocks
+
     # transform dimensions into dask arrays with appropriate forms
-    # Note: adding name to dimension names below is pretty critical if
-    #   multiple calls to wrapper are made.
-    #   dask will create a single object ... danger
-    dims_da = [da.from_array(dims[d]
-                                  .reshape(tuple(dims[d].size if i==j else 1 for j in range(Nd))),
-                                  chunks=tuple(xr_chunks[d] if i==j else -1 for j in range(Nd)),
-                                  name=name+d
-                                 )
-                     for i, d in enumerate(dims)
-              ]
+    #dims_da = [da.from_array(dims[d]
+    #                .reshape(tuple(dims[d].size if i==j else 1 for j in range(Nd))),
+    #                chunks=tuple(xr_chunks[d] if i==j else -1 for j in range(Nd)),
+    #                name=name+d
+    #                         )
+    #           for i, d in enumerate(dims)
+    #          ]
+    dims_values = [dims[d] for i, d in enumerate(dims)]
+    #assert False, dims_da
 
     # wraps func to reinit numpy seed from chunk number
     def _func(*args, seed=None, block_info=None, **kwargs):
         if seed is None:
             seed = np.random.randint(0,2**32-1)
         np.random.seed(seed+block_info[0]['num-chunks'][0])
-        return func(*args[1:], # skips first, because it is the final array
+        # need to subset args to keep only corresponding block
+        # skips first, because it is the final array
+        ilocations = block_info[0]['array-location']
+        nargs = [a[loc[0]:loc[1]] for a, loc in zip(args[1:], ilocations)]
+        return func(*nargs,
                     seed=seed,
                     **kwargs)
 
     x = da.empty(shape=shape, chunks=da_chunks)
-    x = da.map_blocks(_func, x, *dims_da, **kwargs, dtype=dtype)
+    # Note: adding name to dimension names below is pretty critical if
+    #   multiple calls to wrapper are made.
+    #   dask will create a single object ... danger
+    x = da.map_blocks(_func, x, *dims_values, name=name, **kwargs, dtype=dtype)
     x = x.squeeze()
     dims = {d: v for d, v in dims.items() if v.size>1}
 
@@ -321,6 +329,7 @@ def exp_autocorr(time, T, rms, draws=1, dummy_dims=None, **kwargs):
                 dummy_dims=_dummy_dims,
                 dt=dt,
                 **kwargs)
+    return x
     if 'T' not in x.dims:
         x = x.assign_attrs(T=T)
     if 'rms' not in x.dims:

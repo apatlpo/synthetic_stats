@@ -5,13 +5,13 @@ Download Miniconda3 (i.e. for python3) from the [conda website](https://conda.io
 bash Miniconda3-latest-Linux-x86_64.sh
 bash
 conda update conda # command to be updated?
-conda create -n stats -c conda-forge python=3.8 dask dask-jobqueue \
+conda create -n stats -c conda-forge python=3.9 dask dask-jobqueue \
             xarray zarr netcdf4 python-graphviz \
             jupyterlab ipywidgets \
             cartopy geopandas \
             seaborn \
             scikit-learn scikit-gstat \
-            statsmodels pytorch \
+            statsmodels pytorch emd \
             xhistogram \
             sympy
 conda activate stats
