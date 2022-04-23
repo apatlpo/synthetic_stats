@@ -375,7 +375,7 @@ def xrft_spectrum(da):
     return ps
 
 
-def welch(x, fs=None, ufunc=True, alpha=0.5, **kwargs):
+def welch(x, y, fs=None, ufunc=True, alpha=0.5, **kwargs):
     """
     https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.welch.html
     """
@@ -387,23 +387,35 @@ def welch(x, fs=None, ufunc=True, alpha=0.5, **kwargs):
                   )
     dkwargs.update(kwargs)
     dkwargs["noverlap"] = int(alpha*kwargs["nperseg"])
-    f, E = signal.welch(x, fs=fs, axis=ax, **dkwargs)
+    #f, E = signal.welch(x, fs=fs, axis=ax, **dkwargs)
+    f, E = signal.csd(x, y, fs=fs, axis=ax, **dkwargs)
     #
     if ufunc:
         return E
     else:
         return f, E
 
-def spectrum_welch(v, T=60, **kwargs):
+def spectrum_welch(x, y=None, T=60, **kwargs):
     """
 
     Parameters:
     -----------
+    x: xr.DataArray
+        Input timeseries
+    y: xr.DataArray
+        Input timeseries for cross-spectral calculations
     T: float
-        window size in days
+        Window size in days
     """
-    v = v.chunk({"time": -1})
-    kwargs["fs"] = 1/float(v.time[1]-v.time[0])
+    x = x.chunk({"time": -1})
+    if y is None:
+        y = x
+        real = True
+    else:
+        y = y.chunk({"time": -1})
+        real = False
+    #
+    kwargs["fs"] = 1/float(x.time[1]-x.time[0])
     #print(kwargs["fs"]) # 24
     if "nperseg" in kwargs:
         Nb = kwargs["nperseg"]
@@ -414,20 +426,22 @@ def spectrum_welch(v, T=60, **kwargs):
     if "return_onesided" in kwargs and kwargs["return_onesided"]:
         Nb = int(Nb/2)+1
     #
-    f, _ = welch(v.isel(**{d: 0 for d in v.dims if d!="time"}).values,
-                 ufunc=False, **kwargs)
+    _x = x.isel(**{d: 0 for d in x.dims if d!="time"}).values
+    f, _ = welch(_x, _x, ufunc=False, **kwargs)
     #
     E = xr.apply_ufunc(
         welch,
-        v,
+        x, y,
         dask="parallelized",
-        output_dtypes=[np.float64],
-        input_core_dims=[["time"]],
+        output_dtypes=[np.complex128],  # np.float64
+        input_core_dims=[["time"], ["time"]],
         output_core_dims=[["freq_time"]],
         dask_gufunc_kwargs={"output_sizes": {"freq_time": Nb}},
         kwargs=kwargs,
     )
     E = E.assign_coords(freq_time=f).sortby("freq_time")
+    if real:
+        E = np.real(E).astype(np.float64)
     return E, f
 
 
