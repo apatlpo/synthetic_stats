@@ -15,7 +15,7 @@ Note that you can combine environment files into one and then install:
 ```
 conda activate base
 pip install conda-merge
-conda-merge ci/environment.yml -f path/to/other/environment.yml > environment.yml
+conda-merge ci/environment.yml path/to/other/environment.yml > environment.yml
 conda env create -n stats python=3.9 -f environment.yml
 ```
 
