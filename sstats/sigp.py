@@ -12,21 +12,26 @@ import xrft
 
 # ---------------------------- cross-correlations ------------------------------
 
+
 def correlate_np_old(v1, v2, maxlag=None, **kwargs):
     if maxlag is None:
-        return np.correlate(v1, v2, **kwargs)/v1.size
-    R = np.correlate(v1[maxlag:-maxlag],
-                     v2[:],
-                     mode="valid",
-                     )
-    return R/v1[maxlag:-maxlag].size
+        return np.correlate(v1, v2, **kwargs) / v1.size
+    R = np.correlate(
+        v1[maxlag:-maxlag],
+        v2[:],
+        mode="valid",
+    )
+    return R / v1[maxlag:-maxlag].size
 
-def correlate_np(u, v,
-              biased=True,
-              one_sided=True,
-              weights=False,
-             ):
-    """ custom correlation
+
+def correlate_np(
+    u,
+    v,
+    biased=True,
+    one_sided=True,
+    weights=False,
+):
+    """custom correlation
 
       corr[lag] = 1/w(lag) sum_lag u(t) x v(t+lag)
 
@@ -55,28 +60,29 @@ def correlate_np(u, v,
 
     """
     n = u.size
-    assert u.size==v.size, "input vectors must have the same size"
+    assert u.size == v.size, "input vectors must have the same size"
     # build arrays of weights
     if biased:
         w = n
     else:
-        _w = np.arange(1,n+1)
+        _w = np.arange(1, n + 1)
         w = np.hstack([_w, _w[-2::-1]])
     #
     c = np.correlate(u, v, mode="full") / w
-    lag = np.arange(-n+1,n)
+    lag = np.arange(-n + 1, n)
     #
     if one_sided:
-        c, lag = c[n-1:], lag[n-1:]
+        c, lag = c[n - 1 :], lag[n - 1 :]
         if not biased:
-            w = w[n-1:]
+            w = w[n - 1 :]
     if weights:
         return c, lag, w
     else:
         return c, lag
 
+
 def _correlate(v1, v2, dt=None, detrend=False, ufunc=True, **kwargs):
-    ''' Compute a lagged correlation between two time series
+    """Compute a lagged correlation between two time series
     These time series are assumed to be regularly sampled in time
     and along the same time line.
     Note: takes the complex conjugate of v2
@@ -94,61 +100,80 @@ def _correlate(v1, v2, dt=None, detrend=False, ufunc=True, **kwargs):
             Turns detrending on or off. Default is False.
 
     See: https://docs.scipy.org/doc/numpy/reference/generated/numpy.correlate.html
-    '''
+    """
 
     assert v1.shape == v2.shape
 
-    #_correlate = np.correlate
-    #_correlate = correlate_np
+    # _correlate = np.correlate
+    # _correlate = correlate_np
 
     if detrend:
         v1 = signal.detrend(v1)
         v2 = signal.detrend(v2)
 
-    #_kwargs = {'mode': 'same'}
-    #_kwargs.update(**kwargs)
+    # _kwargs = {'mode': 'same'}
+    # _kwargs.update(**kwargs)
 
     # loop over all dimensions but the last one to apply correlate
-    if len(v1.shape)==1:
+    if len(v1.shape) == 1:
         vv, lags = correlate_np(v1, v2, **kwargs)
     else:
         Ni = v1.shape[:-1]
         # infer number of lags from dummy computation
-        i0 = tuple(0 for i in Ni) + np.s_[:,]
+        i0 = (
+            tuple(0 for i in Ni)
+            + np.s_[
+                :,
+            ]
+        )
         f, lags = correlate_np(v1[i0], v2[i0], **kwargs)
-        vv = np.full(Ni+f.shape, np.NaN, dtype=v1.dtype)
+        vv = np.full(Ni + f.shape, np.NaN, dtype=v1.dtype)
         for ii in np.ndindex(Ni):
-            f, _lags = correlate_np(v1[ii + np.s_[:,]],
-                                    v2[ii + np.s_[:,]],
-                                    **kwargs,
-                                    )
+            f, _lags = correlate_np(
+                v1[
+                    ii
+                    + np.s_[
+                        :,
+                    ]
+                ],
+                v2[
+                    ii
+                    + np.s_[
+                        :,
+                    ]
+                ],
+                **kwargs,
+            )
             Nj = f.shape
             for jj in np.ndindex(Nj):
                 vv[ii + jj] = f[jj]
 
     # select only positive lags
-    #vv = vv[..., int(vv.shape[-1]/2):]
+    # vv = vv[..., int(vv.shape[-1]/2):]
 
     # normalized by number of points
-    #vv = vv/v1.shape[-1]
+    # vv = vv/v1.shape[-1]
     # normalization done in correlate_np
 
     if ufunc:
         return vv
     else:
-        #lags = np.arange(vv.shape[-1])*dt
-        if len(vv.shape)==3:
-            vv = vv.transpose((2,1,0))
-        elif len(vv.shape)==2:
-            vv = vv.transpose((1,0))
-        return lags*dt, vv
+        # lags = np.arange(vv.shape[-1])*dt
+        if len(vv.shape) == 3:
+            vv = vv.transpose((2, 1, 0))
+        elif len(vv.shape) == 2:
+            vv = vv.transpose((1, 0))
+        return lags * dt, vv
 
-def correlate(v1, v2,
-              lags=None,
-              #maxlag=None,
-              **kwargs,
-              ):
-    """ Lagged cross-correlation with xarray objects
+
+def correlate(
+    v1,
+    v2,
+    lags=None,
+    # maxlag=None,
+    **kwargs,
+):
+    """Lagged cross-correlation with xarray objects
 
     Parameters:
     -----------
@@ -163,38 +188,43 @@ def correlate(v1, v2,
     """
 
     # make sure time is last
-    dims_ordered = [d for d in v1.dims if d!="time"]+ ["time"]
+    dims_ordered = [d for d in v1.dims if d != "time"] + ["time"]
     v1 = v1.transpose(*dims_ordered)
     v2 = v2.transpose(*dims_ordered)
     # rechunk along time
-    v1 = v1.chunk({'time': -1})
-    v2 = v2.chunk({'time': -1})
+    v1 = v1.chunk({"time": -1})
+    v2 = v2.chunk({"time": -1})
 
     _kwargs = dict(**kwargs)
-    _kwargs["dt"] = float( (v1.time[1]-v1.time[0]).values )
+    _kwargs["dt"] = float((v1.time[1] - v1.time[0]).values)
 
-    #if maxlag is not None:
+    # if maxlag is not None:
     #    _kwargs["maxlag"] = int(maxlag/_kwargs["dt"])
-    #print(_kwargs["maxlag"])
+    # print(_kwargs["maxlag"])
 
     if lags is None:
-        _v1 = v1.isel(**{d: slice(0,2) for d in v1.dims if d!='time'})
-        _v2 = v2.isel(**{d: slice(0,2) for d in v2.dims if d!='time'})
+        _v1 = v1.isel(**{d: slice(0, 2) for d in v1.dims if d != "time"})
+        _v2 = v2.isel(**{d: slice(0, 2) for d in v2.dims if d != "time"})
         lags, _ = _correlate(_v1, _v2, ufunc=False, **_kwargs)
         return correlate(v1, v2, lags=lags, **_kwargs)
 
-    gufunc_kwargs = dict(output_sizes={'lags': lags.size})
-    C = xr.apply_ufunc(_correlate, v1, v2,
-                dask='parallelized', output_dtypes=[v1.dtype],
-                input_core_dims=[['time'], ['time']],
-                output_core_dims=[['lags']],
-                dask_gufunc_kwargs=gufunc_kwargs,
-                kwargs=_kwargs,
-                )
-    return C.assign_coords(lags=lags).rename(v1.name+'_'+v2.name)
+    gufunc_kwargs = dict(output_sizes={"lags": lags.size})
+    C = xr.apply_ufunc(
+        _correlate,
+        v1,
+        v2,
+        dask="parallelized",
+        output_dtypes=[v1.dtype],
+        input_core_dims=[["time"], ["time"]],
+        output_core_dims=[["lags"]],
+        dask_gufunc_kwargs=gufunc_kwargs,
+        kwargs=_kwargs,
+    )
+    return C.assign_coords(lags=lags).rename(v1.name + "_" + v2.name)
+
 
 def effective_DOF(sigma, dt, N):
-    """ Returns effective degrees of freedom (DOF) for the sample mean
+    """Returns effective degrees of freedom (DOF) for the sample mean
     and variance along with the small sample scaling factor for variance
     References: Bailey and Hammersley 1946, Priestley chapter 5.3.2
 
@@ -223,31 +253,33 @@ def effective_DOF(sigma, dt, N):
 
     ## sample mean
     # Priestley (5.3.5), general
-    lags = np.arange(-N-1,N)
-    mean_Ne = N / np.sum( ( 1-np.abs(lags)/N )*sigma(lags*dt) )
+    lags = np.arange(-N - 1, N)
+    mean_Ne = N / np.sum((1 - np.abs(lags) / N) * sigma(lags * dt))
 
     ## sample variance
     # Priestley (5.3.23) with r=0, Gaussian assumption
-    #lags = np.arange(-N-1,N)
-    variance_Ne = N / np.sum( ( 1-np.abs(lags)/N ) * sigma(lags*dt)**2 )
+    # lags = np.arange(-N-1,N)
+    variance_Ne = N / np.sum((1 - np.abs(lags) / N) * sigma(lags * dt) ** 2)
     # small sample scaling factor - Bayley and Hammersley 1946 (10)
-    variance_scale = mean_Ne * (N-1) /N /(mean_Ne-1)
+    variance_scale = mean_Ne * (N - 1) / N / (mean_Ne - 1)
 
     return mean_Ne, variance_Ne, variance_scale
 
+
 @guvectorize("(float64[:], float64[:])", "(n) -> (n)", nopython=True)
 def _barlett_np_gufunc(R, V):
-    """ Autocovariance estimate variance
+    """Autocovariance estimate variance
     Pierce 5.3.23
     """
     N = R.shape[0]
     for r in range(N):
-        V[r] = (1 - r/N) * 2 * R[0]**2 /N
-        for m in range(N-r-1):
-            V[r] += 2*( 1 - (m+r)/N ) * ( R[m]**2 + R[m+r]*R[abs(m-r)] ) /N
+        V[r] = (1 - r / N) * 2 * R[0] ** 2 / N
+        for m in range(N - r - 1):
+            V[r] += 2 * (1 - (m + r) / N) * (R[m] ** 2 + R[m + r] * R[abs(m - r)]) / N
+
 
 def barlett(da, dim):
-    """ Variance estimate for the autocovariance estimate
+    """Variance estimate for the autocovariance estimate
     See Pierce 5.3.23
 
     Parameters
@@ -261,26 +293,27 @@ def barlett(da, dim):
     V = xr.apply_ufunc(
         _barlett_np_gufunc,  # first the function
         da,  # now arguments in the order expected by 'interp1_np'
-        input_core_dims=[[dim],],  # list with one entry per arg
+        input_core_dims=[
+            [dim],
+        ],  # list with one entry per arg
         output_core_dims=[[dim]],  # returned data has one dimension
         dask="parallelized",
-        output_dtypes=[
-            da.dtype
-        ],
+        output_dtypes=[da.dtype],
     )
 
-    return V.rename(da.name+"_var")
+    return V.rename(da.name + "_var")
+
 
 @guvectorize("(float64[:], float64[:])", "(n) -> (n)", nopython=True)
 def _svariance_np_gufunc(u, svar):
-    """ Semi-variance estimate
-    """
+    """Semi-variance estimate"""
     N = u.shape[0]
     for r in range(N):
-        svar[r] = 0.5*np.sum((u[r:]-u[:N-r])**2)/(N-r)
+        svar[r] = 0.5 * np.sum((u[r:] - u[: N - r]) ** 2) / (N - r)
+
 
 def svariance(da, dim):
-    """ Semi-variance estimate
+    """Semi-variance estimate
 
     Parameters
     ----------
@@ -290,29 +323,30 @@ def svariance(da, dim):
         Time dimension
     """
 
-    dt = float(da[dim][1]-da[dim][0])
+    dt = float(da[dim][1] - da[dim][0])
 
     V = xr.apply_ufunc(
         _svariance_np_gufunc,  # first the function
         da,  # now arguments in the order expected by 'interp1_np'
-        input_core_dims=[[dim],],  # list with one entry per arg
+        input_core_dims=[
+            [dim],
+        ],  # list with one entry per arg
         output_core_dims=[["lags"]],  # returned data has one dimension
         dask="parallelized",
-        output_dtypes=[
-            da.dtype
-        ],
+        output_dtypes=[da.dtype],
     )
 
-    V["lags"] = ("lags", np.arange(V["lags"].size)*dt)
-    V["N"] = ((V.lags.max() - V.lags)/dt + 1).astype(int)
+    V["lags"] = ("lags", np.arange(V["lags"].size) * dt)
+    V["N"] = ((V.lags.max() - V.lags) / dt + 1).astype(int)
 
-    return V.rename(da.name+"_svar")
+    return V.rename(da.name + "_svar")
 
 
 _minimize_outputs = ["x", "hess_inv", "jac", "fun"]
 
+
 def _minimize(*args, x0=None, fun=None, **kwargs):
-    """ wrapper around minimized tailored for apply_ufunc call
+    """wrapper around minimized tailored for apply_ufunc call
     in minimize_xr
     """
     res = minimize(fun, x0, args=args, **kwargs)
@@ -321,8 +355,9 @@ def _minimize(*args, x0=None, fun=None, **kwargs):
     res["hess_inv"] = np.diag(res["hess_inv"])
     return tuple(res[o] for o in _minimize_outputs)
 
+
 def minimize_xr(fun, ds, params, variables, dim, **kwargs):
-    """ xarray wrapper around minimize
+    """xarray wrapper around minimize
 
     Parameters
     ----------
@@ -345,11 +380,14 @@ def minimize_xr(fun, ds, params, variables, dim, **kwargs):
     res = xr.apply_ufunc(
         _minimize,
         *[ds[v] for v in variables],
-        input_core_dims=[[dim],]*len(variables),
-        output_core_dims=[["parameters"]]*3+[[]],
+        input_core_dims=[
+            [dim],
+        ]
+        * len(variables),
+        output_core_dims=[["parameters"]] * 3 + [[]],
         vectorize=True,
         dask="parallelized",
-        output_dtypes=[np.float64]*len(_minimize_outputs),
+        output_dtypes=[np.float64] * len(_minimize_outputs),
         kwargs=dict(x0=_x0, fun=fun, **kwargs),
     )
 
@@ -358,20 +396,23 @@ def minimize_xr(fun, ds, params, variables, dim, **kwargs):
 
     return ds_min
 
+
 # ---------------------------- spectra-- ---------------------------------------
 
+
 def xrft_spectrum(da):
-    ps = (xrft
-          .power_spectrum(da.chunk({"time": 24*40}),
-                          dim=["time"],
-                          chunks_to_segments=True,
-                          window="hann",
-                          window_correction=True,
-                         )
-          .mean("time_segment")
-          .rename(da.name)
-          .persist()
-         )
+    ps = (
+        xrft.power_spectrum(
+            da.chunk({"time": 24 * 40}),
+            dim=["time"],
+            chunks_to_segments=True,
+            window="hann",
+            window_correction=True,
+        )
+        .mean("time_segment")
+        .rename(da.name)
+        .persist()
+    )
     return ps
 
 
@@ -382,18 +423,22 @@ def welch(x, y, fs=None, ufunc=True, alpha=0.5, **kwargs):
     ax = -1 if ufunc else 0
     assert fs is not None, "fs needs to be provided"
     #
-    dkwargs = dict(window="hann", return_onesided= False,
-                   detrend = False, scaling= "density",
-                  )
+    dkwargs = dict(
+        window="hann",
+        return_onesided=False,
+        detrend=False,
+        scaling="density",
+    )
     dkwargs.update(kwargs)
-    dkwargs["noverlap"] = int(alpha*kwargs["nperseg"])
-    #f, E = signal.welch(x, fs=fs, axis=ax, **dkwargs)
+    dkwargs["noverlap"] = int(alpha * kwargs["nperseg"])
+    # f, E = signal.welch(x, fs=fs, axis=ax, **dkwargs)
     f, E = signal.csd(x, y, fs=fs, axis=ax, **dkwargs)
     #
     if ufunc:
         return E
     else:
         return f, E
+
 
 def spectrum_welch(x, y=None, T=60, **kwargs):
     """
@@ -415,23 +460,24 @@ def spectrum_welch(x, y=None, T=60, **kwargs):
         y = y.chunk({"time": -1})
         real = False
     #
-    kwargs["fs"] = 1/float(x.time[1]-x.time[0])
-    #print(kwargs["fs"]) # 24
+    kwargs["fs"] = 1 / float(x.time[1] - x.time[0])
+    # print(kwargs["fs"]) # 24
     if "nperseg" in kwargs:
         Nb = kwargs["nperseg"]
     else:
         Nb = int(T * kwargs["fs"])
         kwargs["nperseg"] = Nb
-    #print(Nb) # 1440 = 24*60
+    # print(Nb) # 1440 = 24*60
     if "return_onesided" in kwargs and kwargs["return_onesided"]:
-        Nb = int(Nb/2)+1
+        Nb = int(Nb / 2) + 1
     #
-    _x = x.isel(**{d: 0 for d in x.dims if d!="time"}).values
+    _x = x.isel(**{d: 0 for d in x.dims if d != "time"}).values
     f, _ = welch(_x, _x, ufunc=False, **kwargs)
     #
     E = xr.apply_ufunc(
         welch,
-        x, y,
+        x,
+        y,
         dask="parallelized",
         output_dtypes=[np.complex128],  # np.float64
         input_core_dims=[["time"], ["time"]],
@@ -447,11 +493,13 @@ def spectrum_welch(x, y=None, T=60, **kwargs):
 
 # ---------------------------- filtering ---------------------------------------
 
-def lowpass_filter(cutoff,
-                 numtaps,
-                 dt,
-                ):
-    ''' Low-pass filter: wrapper around scipy.signal.firwing
+
+def lowpass_filter(
+    cutoff,
+    numtaps,
+    dt,
+):
+    """Low-pass filter: wrapper around scipy.signal.firwing
 
     Parameters:
     -----------
@@ -461,25 +509,28 @@ def lowpass_filter(cutoff,
         window size in number of points
     dt: float
         days
-    '''
+    """
     #
-    h = signal.firwin(numtaps,
-                      cutoff=[cutoff],
-                      pass_zero=True,
-                      fs=1./dt,
-                      scale=True,
-                     )
+    h = signal.firwin(
+        numtaps,
+        cutoff=[cutoff],
+        pass_zero=True,
+        fs=1.0 / dt,
+        scale=True,
+    )
     #
-    t = np.arange(numtaps)*dt
+    t = np.arange(numtaps) * dt
     return h, t
 
-def bpass_filter(omega,
-                 hbandwidth,
-                 numtaps,
-                 dt,
-                 ftype,
-                ):
-    ''' Wrapper around scipy.signal.firwing
+
+def bpass_filter(
+    omega,
+    hbandwidth,
+    numtaps,
+    dt,
+    ftype,
+):
+    """Wrapper around scipy.signal.firwing
 
     Parameters:
     -----------
@@ -493,60 +544,74 @@ def bpass_filter(omega,
         sampling interval
     ftype: str
         filter type
-    '''
+    """
     #
-    if ftype=='firwin':
-        h = signal.firwin(numtaps,
-                          cutoff=[omega-hbandwidth, omega+hbandwidth],
-                          pass_zero=False,
-                          fs=1./dt,
-                          scale=True,
-                         )
-    elif ftype=='firwin2':
-        h = signal.firwin2(numtaps,
-                           [0, omega-hbandwidth, omega-hbandwidth*0.5, omega+hbandwidth*0.5, omega+hbandwidth, 1./2/dt],
-                           [0, 0, 1, 1, 0, 0],
-                           fs=1./dt,
-                          )
+    if ftype == "firwin":
+        h = signal.firwin(
+            numtaps,
+            cutoff=[omega - hbandwidth, omega + hbandwidth],
+            pass_zero=False,
+            fs=1.0 / dt,
+            scale=True,
+        )
+    elif ftype == "firwin2":
+        h = signal.firwin2(
+            numtaps,
+            [
+                0,
+                omega - hbandwidth,
+                omega - hbandwidth * 0.5,
+                omega + hbandwidth * 0.5,
+                omega + hbandwidth,
+                1.0 / 2 / dt,
+            ],
+            [0, 0, 1, 1, 0, 0],
+            fs=1.0 / dt,
+        )
     #
-    t = np.arange(numtaps)*dt
+    t = np.arange(numtaps) * dt
     return h, t
 
+
 def filter_response(h, dt):
-    ''' Returns the frequency response
-    '''
-    w, h_hat = signal.freqz(h, worN=8000, fs=1/dt)
-    #return h_hat, (w/np.pi)/2/dt
+    """Returns the frequency response"""
+    w, h_hat = signal.freqz(h, worN=8000, fs=1 / dt)
+    # return h_hat, (w/np.pi)/2/dt
     return h_hat, w
 
 
 def convolve(x, h=None, hilbert=False):
-    """ Convolve an input signal with a kernel
+    """Convolve an input signal with a kernel
     Optionaly compute the Hilbert transform of the resulting time series
     """
-    #x_f = im.convolve1d(x, h, axis=1, mode='constant')
+    # x_f = im.convolve1d(x, h, axis=1, mode='constant')
     x_f = signal.filtfilt(h, [1], x, axis=-1)
     if hilbert:
         return signal.hilbert(x_f)
     else:
         return x_f
 
+
 def filt(v, h, hilbert=False):
     output_dtype = complex if hilbert else float
-    #gufunc_kwargs = dict(output_sizes={d: v[d].size for d in v.dims},
+    # gufunc_kwargs = dict(output_sizes={d: v[d].size for d in v.dims},
     #                     #output_sizes={'time': len(v.time)},
     #                     #meta=v,
     #                     )
-    return xr.apply_ufunc(convolve, v, kwargs={'h': h, 'hilbert': hilbert},
-                    dask='parallelized',
-                    output_dtypes=[output_dtype],
-                    input_core_dims=[['time']],
-                    output_core_dims=[['time']],
-                    #dask_gufunc_kwargs = gufunc_kwargs,
-                    )
+    return xr.apply_ufunc(
+        convolve,
+        v,
+        kwargs={"h": h, "hilbert": hilbert},
+        dask="parallelized",
+        output_dtypes=[output_dtype],
+        input_core_dims=[["time"]],
+        output_core_dims=[["time"]],
+        # dask_gufunc_kwargs = gufunc_kwargs,
+    )
+
 
 def bpass_demodulate(ds, omega, hbandwidth, T, ftype="firwin"):
-    """ create filter, filter time series, hilbert transform, demodulate
+    """create filter, filter time series, hilbert transform, demodulate
 
     ds: xr.DataArray
         input time series, "time" should be the time dimension
@@ -557,28 +622,34 @@ def bpass_demodulate(ds, omega, hbandwidth, T, ftype="firwin"):
     T: float
         Window length in ds["time"] units
     """
-    dt = float(ds["time"][1]-ds["time"][0])
+    dt = float(ds["time"][1] - ds["time"][0])
 
-    h, t  = bpass_filter(omega, hbandwidth, int(T/dt), dt, ftype)
+    h, t = bpass_filter(omega, hbandwidth, int(T / dt), dt, ftype)
     h_hat, w = filter_response(h, dt)
 
-    exp = np.exp(-1j*2*np.pi*omega*ds["time"])
+    exp = np.exp(-1j * 2 * np.pi * omega * ds["time"])
     for v in ds:
-        ds[v+'_bpassed'] = filt(ds[v], h, hilbert=True).persist()
-        ds[v+'_demodulated'] = ds[v+'_bpassed']*exp
-    ds['exp'] = exp
+        ds[v + "_bpassed"] = filt(ds[v], h, hilbert=True).persist()
+        ds[v + "_demodulated"] = ds[v + "_bpassed"] * exp
+    ds["exp"] = exp
 
     return ds, h, h_hat, w
 
+
 # ---------------------------- Max Likelihood ----------------------------------
 
-def likelihood(u, t, c, *args,
-              mu=None,
-              sigma0=None,
-              jitter=None,
-              decomposed=False,
-             ):
-    """ evaluate the log likelihood
+
+def likelihood(
+    u,
+    t,
+    c,
+    *args,
+    mu=None,
+    sigma0=None,
+    jitter=None,
+    decomposed=False,
+):
+    """evaluate the log likelihood
 
     Parameters
     ----------
@@ -612,24 +683,24 @@ def likelihood(u, t, c, *args,
 
     N = u.size
 
-    C = c(t[:,None]-t[None,:], *args)
+    C = c(t[:, None] - t[None, :], *args)
     # Matern covariance is NaN at the origin
     C = np.nan_to_num(C, nan=1)
 
     # add jitter
     if jitter:
         C0 = C
-        flag=True
+        flag = True
         while flag:
-            assert jitter<0, "jitter is larger than 0, stops"
+            assert jitter < 0, "jitter is larger than 0, stops"
             try:
-                C = C0 + np.eye(C.shape[0])* 10**jitter
+                C = C0 + np.eye(C.shape[0]) * 10**jitter
                 # Cholesky decomposition
                 L_solve = linalg.cho_factor(C, lower=True)
-                flag=False
-                #print(f"jitter = 10**{jitter}")
+                flag = False
+                # print(f"jitter = 10**{jitter}")
             except:
-                jitter+=+1
+                jitter += +1
     else:
         L_solve = linalg.cho_factor(C, lower=True)
 
@@ -652,21 +723,23 @@ def likelihood(u, t, c, *args,
         sigma0_hat = sigma0
 
     # estimate the log likelihood function
-    #s, logdet = np.linalg.slogdet(C)
-    logdet = 2*np.log(np.diag(L_solve[0])).sum()
-    L = dict(L_logdet = -1/2 * logdet,
-             L_logsigma = - N/2*np.log(sigma0_hat),
-             L_N = - N/2,
-             )
+    # s, logdet = np.linalg.slogdet(C)
+    logdet = 2 * np.log(np.diag(L_solve[0])).sum()
+    L = dict(
+        L_logdet=-1 / 2 * logdet,
+        L_logsigma=-N / 2 * np.log(sigma0_hat),
+        L_N=-N / 2,
+    )
     pL = L["L_logdet"] + L["L_logsigma"] + L["L_N"]
 
-    out = dict(L=pL,
-               mu=mu_hat,
-               sigma0=sigma0_hat,
-               jitter=jitter,
-              )
+    out = dict(
+        L=pL,
+        mu=mu_hat,
+        sigma0=sigma0_hat,
+        jitter=jitter,
+    )
     if mu is None:
-        out["mu_err"] = np.sqrt( W / sigma0_hat )
+        out["mu_err"] = np.sqrt(W / sigma0_hat)
     if sigma0 is None:
         out["sigma0_err"] = sigma0_hat / np.sqrt(N)
 
@@ -675,16 +748,24 @@ def likelihood(u, t, c, *args,
 
     return out
 
+
 def likelihood_only(*args, **kwargs):
     # wrapper to feed np.vectorize
     return likelihood(*args, **kwargs)["L"]
 
-likelihood_vec = np.vectorize(likelihood_only, excluded=[0,1,2])
 
-_likelihood_outputs = ["L", "mu", "sigma0", "jitter",]
+likelihood_vec = np.vectorize(likelihood_only, excluded=[0, 1, 2])
+
+_likelihood_outputs = [
+    "L",
+    "mu",
+    "sigma0",
+    "jitter",
+]
+
 
 def likelihood_xr(u, c, params, *args, **kwargs):
-    """ Compute the likelihood and profiled parametes (mu, sigma0)
+    """Compute the likelihood and profiled parametes (mu, sigma0)
 
     Parameters
     ----------
@@ -700,10 +781,10 @@ def likelihood_xr(u, c, params, *args, **kwargs):
     **kwargs: passed to likelihood method (see associated doc)
     """
 
-    dim = "time" # core dimension
-    _params = xr.Dataset(params) # dict to xarray dataset
+    dim = "time"  # core dimension
+    _params = xr.Dataset(params)  # dict to xarray dataset
 
-    def _likelihood_wrapper(u, time,  *args, outputs=None, **kwargs):
+    def _likelihood_wrapper(u, time, *args, outputs=None, **kwargs):
         new_args = tuple(float(arg) for arg in args)
         d = likelihood(u, time, c, *new_args, **kwargs)
         return tuple(d[o] for o in outputs)
@@ -716,15 +797,18 @@ def likelihood_xr(u, c, params, *args, **kwargs):
     if "decomposed" in kwargs and kwargs["decomposed"]:
         outputs = outputs + ["L_logdet", "L_logsigma", "L_N"]
 
-    res = xr.apply_ufunc(_likelihood_wrapper,
-                         u, u.time, *[_params[p] for p in params],
-                         input_core_dims=[[dim], [dim]] + [[]]*len(params),
-                         output_core_dims=[[]]*len(outputs),
-                         vectorize=True,
-                         dask="parallelized",
-                         output_dtypes=[np.float64]*len(outputs),
-                         kwargs=dict(outputs=outputs, **kwargs),
-                        )
+    res = xr.apply_ufunc(
+        _likelihood_wrapper,
+        u,
+        u.time,
+        *[_params[p] for p in params],
+        input_core_dims=[[dim], [dim]] + [[]] * len(params),
+        output_core_dims=[[]] * len(outputs),
+        vectorize=True,
+        dask="parallelized",
+        output_dtypes=[np.float64] * len(outputs),
+        kwargs=dict(outputs=outputs, **kwargs),
+    )
 
     ds = xr.merge([r.rename(o) for r, o in zip(res, outputs)])
 
@@ -732,22 +816,23 @@ def likelihood_xr(u, c, params, *args, **kwargs):
 
     return ds
 
+
 def likelihood_confidence_ratio(alpha=0.1):
-    """ Ratio used to define the confidence ratio
+    """Ratio used to define the confidence ratio
         Prob(L>L_max/c) = 1 - alpha
 
     Pawitan 2.5
     """
-    return np.exp(-chi2.ppf(1-alpha,1)/2)
+    return np.exp(-chi2.ppf(1 - alpha, 1) / 2)
+
 
 def compute_hessian_diag(u, t, c, params, deltas, **kwargs):
-    """ Manually compute the Hessian diagonal of the log likelihood
-    """
+    """Manually compute the Hessian diagonal of the log likelihood"""
 
     I = {}
     for p, value in params.items():
         _params = dict(**params)
-        _params[p] = [value-deltas[p], value, value+deltas[p]]
+        _params[p] = [value - deltas[p], value, value + deltas[p]]
         ds = likelihood_xr(u, c, _params, **kwargs)
         I[p] = -float(ds.L.differentiate(p).differentiate(p).sel(**{p: value}))
 

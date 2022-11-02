@@ -18,17 +18,18 @@ import statsmodels.api as sm
 # - https://scikit-learn.org/stable/modules/generated/sklearn.gaussian_process.kernels.Matern.html
 
 
-def wrapper(func,
-            time,
-            params=None,
-            dummy_dims=dict(draw=1),
-            chunks=None,
-            dtype='float',
-            output='xarray',
-            name='z',
-            **kwargs,
-           ):
-    """ Wraps timeseries generation code in order to distribute the generation
+def wrapper(
+    func,
+    time,
+    params=None,
+    dummy_dims=dict(draw=1),
+    chunks=None,
+    dtype="float",
+    output="xarray",
+    name="z",
+    **kwargs,
+):
+    """Wraps timeseries generation code in order to distribute the generation
 
     Parameters
     ----------
@@ -58,7 +59,7 @@ def wrapper(func,
     if isinstance(time, int):
         time = np.arange(time)
     elif isinstance(time, tuple):
-        time = np.arange(0., time[0], time[1])
+        time = np.arange(0.0, time[0], time[1])
     else:
         time = np.array(time)
     Nt = time.size
@@ -67,15 +68,15 @@ def wrapper(func,
     if isinstance(params, dict):
         for d, v in params.items():
             dims[d] = np.array(v, ndmin=1)
-    dims['time'] = time
+    dims["time"] = time
     # dummy dimensions are last, just after the time dimension
     for d, v in dummy_dims.items():
         dims[d] = np.arange(v)
     Nd = len(dims)
     shape = tuple(v.size for d, v in dims.items())
 
-    xr_chunks = {d: 'auto' for d in dims}
-    xr_chunks['time'] = -1
+    xr_chunks = {d: "auto" for d in dims}
+    xr_chunks["time"] = -1
     if chunks:
         xr_chunks.update(**chunks)
     da_chunks = tuple(xr_chunks[d] for d in dims)
@@ -83,7 +84,7 @@ def wrapper(func,
     # Note: this should be overlhauled with xr.map_blocks
 
     # transform dimensions into dask arrays with appropriate forms
-    #dims_da = [da.from_array(dims[d]
+    # dims_da = [da.from_array(dims[d]
     #                .reshape(tuple(dims[d].size if i==j else 1 for j in range(Nd))),
     #                chunks=tuple(xr_chunks[d] if i==j else -1 for j in range(Nd)),
     #                name=name+d
@@ -91,20 +92,18 @@ def wrapper(func,
     #           for i, d in enumerate(dims)
     #          ]
     dims_values = [dims[d] for i, d in enumerate(dims)]
-    #assert False, dims_da
+    # assert False, dims_da
 
     # wraps func to reinit numpy seed from chunk number
     def _func(*args, seed=None, block_info=None, **kwargs):
         if seed is None:
-            seed = np.random.randint(0,2**32-1)
-        np.random.seed(seed+block_info[0]['num-chunks'][0])
+            seed = np.random.randint(0, 2**32 - 1)
+        np.random.seed(seed + block_info[0]["num-chunks"][0])
         # need to subset args to keep only corresponding block
         # skips first, because it is the final array
-        ilocations = block_info[0]['array-location']
-        nargs = [a[loc[0]:loc[1]] for a, loc in zip(args[1:], ilocations)]
-        return func(*nargs,
-                    seed=seed,
-                    **kwargs)
+        ilocations = block_info[0]["array-location"]
+        nargs = [a[loc[0] : loc[1]] for a, loc in zip(args[1:], ilocations)]
+        return func(*nargs, seed=seed, **kwargs)
 
     x = da.empty(shape=shape, chunks=da_chunks)
     # Note: adding name to dimension names below is pretty critical if
@@ -112,45 +111,50 @@ def wrapper(func,
     #   dask will create a single object ... danger
     x = da.map_blocks(_func, x, *dims_values, name=name, **kwargs, dtype=dtype)
     x = x.squeeze()
-    dims = {d: v for d, v in dims.items() if v.size>1}
+    dims = {d: v for d, v in dims.items() if v.size > 1}
 
     # put result in an xarray DataArray
-    if output=='xarray':
+    if output == "xarray":
         x = xr.DataArray(x, dims=tuple(dims), coords=dims).rename(name)
-    elif output=='dask_dd':
-        assert x.ndim<3, 'Data generated is not 2D and cannot be transformed' \
-                +' into a dataframe'
-        to_index = lambda d: (dd
-                              .from_array(dims[d], columns=d)
-                              .to_frame()
-                              .set_index(d)
-                              .index
-                             )
-        if shape[0]==1:
-            i=to_index('time')
-            c='draw'
+    elif output == "dask_dd":
+        assert x.ndim < 3, (
+            "Data generated is not 2D and cannot be transformed" + " into a dataframe"
+        )
+        to_index = lambda d: (
+            dd.from_array(dims[d], columns=d).to_frame().set_index(d).index
+        )
+        if shape[0] == 1:
+            i = to_index("time")
+            c = "draw"
         else:
-            i=to_index('draw')
-            c=time
+            i = to_index("draw")
+            c = time
         x = dd.from_dask_array(x, index=i, columns=c)
 
     return x
 
+
 def _uniform(low, high, time, *args, seed=None, **kwargs):
-    """ atomic wrapper around uniform distribution method
-    """
+    """atomic wrapper around uniform distribution method"""
     rng = np.random.default_rng(seed=seed)
     if not isinstance(time, int):
         time = time.size
     extra = (time,) + tuple(a.size for a in args)
-    out = np.zeros((low.size, high.size,)+extra)
+    out = np.zeros(
+        (
+            low.size,
+            high.size,
+        )
+        + extra
+    )
     for i, l in enumerate(low.flatten()):
         for j, h in enumerate(high.flatten()):
-            out[i,j,:,:] = rng.uniform(l, h, extra)
+            out[i, j, :, :] = rng.uniform(l, h, extra)
     return out
 
-def uniform(time, low=0., high=1., draws=1, dummy_dims=None, **kwargs):
-    """ Generates uniformly distributed numbers
+
+def uniform(time, low=0.0, high=1.0, draws=1, dummy_dims=None, **kwargs):
+    """Generates uniformly distributed numbers
 
     Parameters
     ----------
@@ -170,32 +174,35 @@ def uniform(time, low=0., high=1., draws=1, dummy_dims=None, **kwargs):
     _dummy_dims = dict(draw=draws)
     if dummy_dims is not None:
         _dummy_dims.update(**dummy_dims)
-    x = wrapper(_uniform,
-                time,
-                params={'low': low, 'high': high},
-                dummy_dims=_dummy_dims,
-                **kwargs)
-    if 'low' not in x.dims:
+    x = wrapper(
+        _uniform,
+        time,
+        params={"low": low, "high": high},
+        dummy_dims=_dummy_dims,
+        **kwargs,
+    )
+    if "low" not in x.dims:
         x = x.assign_attrs(low=low)
-    if 'high' not in x.dims:
+    if "high" not in x.dims:
         x = x.assign_attrs(high=high)
     return x
 
-def _normal(loc, scale, time, *args, seed=None, **kwargs): #
-    """ atomic wrapper around normal distribution method
-    """
+
+def _normal(loc, scale, time, *args, seed=None, **kwargs):  #
+    """atomic wrapper around normal distribution method"""
     rng = np.random.default_rng(seed=seed)
     if not isinstance(time, int):
         time = time.size
     extra = (time,) + tuple(a.size for a in args)
-    out = np.zeros((loc.size, scale.size)+extra)
+    out = np.zeros((loc.size, scale.size) + extra)
     for i, l in enumerate(loc.flatten()):
         for j, s in enumerate(scale.flatten()):
             out[i, j, ...] = rng.normal(l, s, extra)
     return out
 
-def normal(time, loc=0., scale=1., draws=1, dummy_dims=None, **kwargs):
-    """ Generates normally distributed numbers
+
+def normal(time, loc=0.0, scale=1.0, draws=1, dummy_dims=None, **kwargs):
+    """Generates normally distributed numbers
 
     Parameters
     ----------
@@ -215,33 +222,41 @@ def normal(time, loc=0., scale=1., draws=1, dummy_dims=None, **kwargs):
     _dummy_dims = dict(draw=draws)
     if dummy_dims is not None:
         _dummy_dims.update(**dummy_dims)
-    x = wrapper(_normal,
-                time,
-                params={'loc': loc, 'scale': scale},
-                dummy_dims=_dummy_dims,
-                **kwargs,
-               )
-    if 'loc' not in x.dims:
+    x = wrapper(
+        _normal,
+        time,
+        params={"loc": loc, "scale": scale},
+        dummy_dims=_dummy_dims,
+        **kwargs,
+    )
+    if "loc" not in x.dims:
         x = x.assign_attrs(loc=loc)
-    if 'scale' not in x.dims:
+    if "scale" not in x.dims:
         x = x.assign_attrs(scale=scale)
     return x
 
+
 def _binomial(n, p, time, *args, seed=None, **kwargs):
-    """ atomic wrapper around binomial distribution method
-    """
+    """atomic wrapper around binomial distribution method"""
     rng = np.random.default_rng(seed=seed)
     if not isinstance(time, int):
         time = time.size
     extra = (time,) + tuple(a.size for a in args)
-    out = np.zeros((n.size, p.size,)+extra)
+    out = np.zeros(
+        (
+            n.size,
+            p.size,
+        )
+        + extra
+    )
     for i, _n in enumerate(n.flatten()):
         for j, _p in enumerate(p.flatten()):
-            out[i,j,:,:] = rng.binomial(_n, _p, extra)
+            out[i, j, :, :] = rng.binomial(_n, _p, extra)
     return out
 
-def binomial(time, n=1, p=.5, draws=1, dummy_dims=None, **kwargs):
-    """ Generates binomial random numbers
+
+def binomial(time, n=1, p=0.5, draws=1, dummy_dims=None, **kwargs):
+    """Generates binomial random numbers
 
     Parameters
     ----------
@@ -259,39 +274,49 @@ def binomial(time, n=1, p=.5, draws=1, dummy_dims=None, **kwargs):
     _dummy_dims = dict(draw=draws)
     if dummy_dims is not None:
         _dummy_dims.update(**dummy_dims)
-    x = wrapper(_binomial,
-                time,
-                params={'n': n, 'p': p},
-                dummy_dims=_dummy_dims,
-                **kwargs)
-    if 'n' not in x.dims:
+    x = wrapper(
+        _binomial, time, params={"n": n, "p": p}, dummy_dims=_dummy_dims, **kwargs
+    )
+    if "n" not in x.dims:
         x = x.assign_attrs(n=n)
-    if 'p' not in x.dims:
+    if "p" not in x.dims:
         x = x.assign_attrs(p=p)
     return x
 
+
 def _exp_autocorr(T, rms, time, *args, dt=None, seed=None, **kwargs):
-    """ exp_autocorr core code. See exp_autocorr doc
-    """
-    #time = float(time.squeeze())
+    """exp_autocorr core code. See exp_autocorr doc"""
+    # time = float(time.squeeze())
     np.random.seed(seed)
     arma = sm.tsa.arma_generate_sample
     if not isinstance(time, int):
         time = time.size
     extra = (time,) + tuple(a.size for a in args)
-    out = np.zeros((T.size, rms.size,)+extra)
+    out = np.zeros(
+        (
+            T.size,
+            rms.size,
+        )
+        + extra
+    )
     for i, t in enumerate(T.flatten()):
         for j, r in enumerate(rms.flatten()):
-            ar = np.array([1, -1+dt/t]) # watch for sign
-            am = np.array([1,])
-            out[i,j,...] = arma(ar,
-                                am,
-                                extra,
-                                axis=0,
-                                scale=np.sqrt(2*dt/t)*r,
-                                **kwargs,
-                               )
+            ar = np.array([1, -1 + dt / t])  # watch for sign
+            am = np.array(
+                [
+                    1,
+                ]
+            )
+            out[i, j, ...] = arma(
+                ar,
+                am,
+                extra,
+                axis=0,
+                scale=np.sqrt(2 * dt / t) * r,
+                **kwargs,
+            )
     return out
+
 
 def exp_autocorr(time, T, rms, draws=1, dummy_dims=None, **kwargs):
     """Generate exponentially correlated time series
@@ -321,50 +346,55 @@ def exp_autocorr(time, T, rms, draws=1, dummy_dims=None, **kwargs):
     if isinstance(time, tuple):
         dt = time[1]
     else:
-        dt = time[1]-time[0]
+        dt = time[1] - time[0]
 
-    x = wrapper(_exp_autocorr,
-                time,
-                params={'T': T, 'rms': rms,},
-                dummy_dims=_dummy_dims,
-                dt=dt,
-                **kwargs)
-    return x
-    if 'T' not in x.dims:
+    x = wrapper(
+        _exp_autocorr,
+        time,
+        params={
+            "T": T,
+            "rms": rms,
+        },
+        dummy_dims=_dummy_dims,
+        dt=dt,
+        **kwargs,
+    )
+    if "T" not in x.dims:
         x = x.assign_attrs(T=T)
-    if 'rms' not in x.dims:
+    if "rms" not in x.dims:
         x = x.assign_attrs(rms=rms)
 
     return x
 
+
 def _general_autocorr(rms, time, *args, c=None, dt=None, seed=None, **kwargs):
-    """ exp_autocorr core code. See exp_autocorr doc
-    """
+    """exp_autocorr core code. See exp_autocorr doc"""
     # prepare Cholesky decomposition
     t = time.squeeze()
-    sigma = c( abs(t[:,None] - t[None,:]) )
-    #assert False, (t.shape, t, sigma)
+    sigma = c(abs(t[:, None] - t[None, :]))
+    # assert False, (t.shape, t, sigma)
     flag = True
-    jitter_exp=-20.
+    jitter_exp = -20.0
     while flag:
         try:
-            L = np.linalg.cholesky(sigma
-                                   + np.eye(time.size) *10**jitter_exp,
-                                   )
-            flag=False
+            L = np.linalg.cholesky(
+                sigma + np.eye(time.size) * 10**jitter_exp,
+            )
+            flag = False
         except:
-            jitter_exp+=1
-    scale = rms/np.sqrt(c(0))
+            jitter_exp += 1
+    scale = rms / np.sqrt(c(0))
     #
     rng = np.random.default_rng(seed=seed)
     if not isinstance(time, int):
         time = time.size
     extra = (time,) + tuple(a.size for a in args)
-    out = np.zeros((rms.size,)+extra)
+    out = np.zeros((rms.size,) + extra)
     for j, r in enumerate(rms.flatten()):
-        noise = rng.normal(0., 1., extra)
-        out[j,...] = np.einsum("ij,j...->i...", L, noise)*scale
+        noise = rng.normal(0.0, 1.0, extra)
+        out[j, ...] = np.einsum("ij,j...->i...", L, noise) * scale
     return out
+
 
 def general_autocorr(time, c, rms, draws=1, dummy_dims=None, **kwargs):
     """Generate a time series that will verify some autocorrelation
@@ -391,18 +421,22 @@ def general_autocorr(time, c, rms, draws=1, dummy_dims=None, **kwargs):
     if isinstance(time, tuple):
         dt = time[1]
     else:
-        dt = time[1]-time[0]
+        dt = time[1] - time[0]
 
     assert c is not None, "An autocorrelation c must be passed"
 
-    x = wrapper(_general_autocorr,
-                time,
-                params={'rms': rms,},
-                dummy_dims=_dummy_dims,
-                dt=dt,
-                c=c,
-                **kwargs)
-    if 'rms' not in x.dims:
+    x = wrapper(
+        _general_autocorr,
+        time,
+        params={
+            "rms": rms,
+        },
+        dummy_dims=_dummy_dims,
+        dt=dt,
+        c=c,
+        **kwargs,
+    )
+    if "rms" not in x.dims:
         x = x.assign_attrs(rms=rms)
 
     return x

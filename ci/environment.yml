@@ -1,0 +1,26 @@
+name: sstats
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - xarray
+  - dask
+  - dask-jobqueue
+  - python-graphviz
+  - zarr
+  - netcdf4
+  - jupyterlab
+  - ipywidgets
+  - seaborn
+  - scikit-learn
+  - scikit-gstat
+  - statsmodels
+  - sympy
+  #pytorch
+  #emd
+  - xhistogram
+  - xrft
+  - pywavelets
+  - pip
+  - pip:
+    - kymatio
