@@ -3,7 +3,8 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - xarray
+  - python>=3.9
+  #- xarray # xhistogram, xrft dependency
   - dask
   - dask-jobqueue
   - python-graphviz

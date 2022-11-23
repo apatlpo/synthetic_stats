@@ -6,6 +6,8 @@ import dask.dataframe as dd
 from scipy import signal
 import statsmodels.api as sm
 
+from scipy.fft import fft, ifft, fftfreq
+
 # notes on generation of data with prescribed autocovariance:
 # - Lilly 2017b , section 5
 # - http://www.falmity.com/stats/python/c/gpeff/
@@ -438,5 +440,76 @@ def general_autocorr(time, c, rms, draws=1, dummy_dims=None, **kwargs):
     )
     if "rms" not in x.dims:
         x = x.assign_attrs(rms=rms)
+
+    return x
+
+
+def _spectral_viggiano(T, tau_eta, time, *args, e=None, dt=None, n_layers=None, seed=None, **kwargs):
+    """exp_autocorr core code. See general_spectral doc"""
+    # prepare fourier decomposition
+    #t = time.squeeze()    
+    #scale = rms / np.sqrt(c(0))
+    #
+    rng = np.random.default_rng(seed=seed)
+    if not isinstance(time, int):
+        time = time.size
+    extra = (time,) + tuple(a.size for a in args)
+    extra_ones = (extra[0],) + tuple(1 for e in extra[1:])
+    out = np.zeros((T.size, tau_eta.size) + extra)
+    #assert False, extra
+    omega = 2*np.pi*fftfreq(time, d=dt).reshape(extra_ones)
+    for i, _T in enumerate(T.flatten()):
+        for j, _tau_eta in enumerate(tau_eta.flatten()):
+            w = rng.normal(0.0, 1.0, extra)
+            u_hat = fft(w, axis=0) /(1-1j*omega*_T) /(1-1j*omega*_tau_eta)**(n_layers-1)
+            out[i,j, ...] = ifft(u_hat, axis=0).real
+    return out
+
+
+def spectral_viggiano(time, T, tau_eta, n_layers, draws=1, dummy_dims=None, **kwargs):
+    """Generate a time series that will verify the autocorrelation (2.14)-(2.18) in Viggiano et al. 2020
+    Modelling Lagrangian velocity and acceleration in turbulent flows as infinitely differentiable stochastic processes
+    J. Fluid Mech.
+    
+    Parameters:
+    -----------
+    time: int, np.ndarray, tuple
+        Number of time steps, time array, tuple (T, dt)
+    T: float, iterable
+        Long decorrelation timescale
+    tau_eta: float, iterable
+        Short decorrelation timescale
+    n_layers: float, iterable
+        Number of layers, 2(n_layers-1) is the high frequency spectral slope
+    draws: int, optional
+        Size of the ensemble, default to 1
+    seed: int, optional
+        numpy seed
+    """
+    _dummy_dims = dict(draw=draws)
+    if dummy_dims is not None:
+        _dummy_dims.update(**dummy_dims)
+
+    if isinstance(time, tuple):
+        dt = time[1]
+    else:
+        dt = time[1] - time[0]
+
+    x = wrapper(
+        _spectral_viggiano,
+        time,
+        params={
+            "T": T,
+            "tau_eta": tau_eta,
+        },
+        dummy_dims=_dummy_dims,
+        dt=dt,
+        n_layers=n_layers,
+        **kwargs,
+    )
+    if "T" not in x.dims:
+        x = x.assign_attrs(T=T)
+    if "tau_eta" not in x.dims:
+        x = x.assign_attrs(tau_eta=tau_eta)
 
     return x

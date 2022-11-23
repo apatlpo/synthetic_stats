@@ -7,7 +7,7 @@ To install from the environment file:
 ```
 git clone https://github.com/apatlpo/synthetic_stats.git
 cd synthetic_stats
-conda env create -n stats python=3.9 -f ci/environment.yml
+conda env create -f ci/environment.yml
 ```
 
 Note that you can combine environment files into one and then install:
@@ -16,7 +16,7 @@ Note that you can combine environment files into one and then install:
 conda activate base
 pip install conda-merge
 conda-merge ci/environment.yml path/to/other/environment.yml > environment.yml
-conda env create -n stats python=3.9 -f environment.yml
+conda env create -n stats -f environment.yml
 ```
 
 ## Manual install :

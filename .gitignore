@@ -105,3 +105,4 @@ ENV/
 # dask related
 dask-worker-space
 dask-worker*
+sstats/_version.py
