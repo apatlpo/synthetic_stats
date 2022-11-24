@@ -444,7 +444,7 @@ def general_autocorr(time, c, rms, draws=1, dummy_dims=None, **kwargs):
     return x
 
 
-def _spectral_viggiano(T, tau_eta, time, *args, e=None, dt=None, n_layers=None, seed=None, **kwargs):
+def _spectral_viggiano(T, tau_eta, time, *args, dt=None, n_layers=None, seed=None, **kwargs):
     """exp_autocorr core code. See general_spectral doc"""
     # prepare fourier decomposition
     #t = time.squeeze()    
@@ -507,6 +507,10 @@ def spectral_viggiano(time, T, tau_eta, n_layers, draws=1, dummy_dims=None, **kw
         n_layers=n_layers,
         **kwargs,
     )
+
+    # normalize time series
+    x = x/x.std("time")
+
     if "T" not in x.dims:
         x = x.assign_attrs(T=T)
     if "tau_eta" not in x.dims:
