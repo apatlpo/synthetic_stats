@@ -440,7 +440,7 @@ def welch(x, y, fs=None, ufunc=True, alpha=0.5, **kwargs):
         return f, E
 
 
-def spectrum_welch(x, y=None, T=60, **kwargs):
+def spectrum_welch(x, y=None, T=60, real=None, **kwargs):
     """
 
     Parameters:
@@ -455,7 +455,8 @@ def spectrum_welch(x, y=None, T=60, **kwargs):
     x = x.chunk({"time": -1})
     if y is None:
         y = x
-        real = True
+        if real is None:
+            real = True
     else:
         y = y.chunk({"time": -1})
         real = False

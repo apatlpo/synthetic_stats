@@ -445,7 +445,7 @@ def general_autocorr(time, c, rms, draws=1, dummy_dims=None, **kwargs):
 
 
 def _spectral_viggiano(T, tau_eta, time, *args, dt=None, n_layers=None, seed=None, **kwargs):
-    """exp_autocorr core code. See general_spectral doc"""
+    """spectral_viggiano core code. See spectral_viggiano doc"""
     # prepare fourier decomposition
     #t = time.squeeze()    
     #scale = rms / np.sqrt(c(0))
@@ -515,5 +515,67 @@ def spectral_viggiano(time, T, tau_eta, n_layers, draws=1, dummy_dims=None, **kw
         x = x.assign_attrs(T=T)
     if "tau_eta" not in x.dims:
         x = x.assign_attrs(tau_eta=tau_eta)
+
+    return x
+
+def _spectral(time, *args, dt=None, spectrum=None, seed=None, **kwargs):
+    """spectral core code. See spectral doc"""
+    # prepare fourier decomposition
+    #t = time.squeeze()    
+    #scale = rms / np.sqrt(c(0))
+    #
+    rng = np.random.default_rng(seed=seed)
+    if not isinstance(time, int):
+        time = time.size
+    extra = (time,) + tuple(a.size for a in args)
+    extra_ones = (extra[0],) + tuple(1 for e in extra[1:])
+    out = np.zeros(extra, dtype=complex) # critical to specify complex dtype or imaginary part will be discarded in assignment below
+    omega = 2*np.pi*fftfreq(time, d=dt).reshape(extra_ones) # rad/d
+    w = rng.normal(0.0, 1.0, extra) + 1j*rng.normal(0.0, 1.0, extra)
+    u_hat = fft(w, axis=0) * spectrum(omega)
+    out[...] = ifft(u_hat, axis=0)
+    # detects any NaN
+    assert not np.isnan(out).any(), out
+    return out
+
+
+def spectral(time, draws=1, dummy_dims=None, spectrum=None, dtype=complex, **kwargs):
+    """Generate a time series based on a general spectrum
+    
+    Parameters:
+    -----------
+    time: int, np.ndarray, tuple
+        Number of time steps, time array, tuple (T, dt)
+    spectrum: lambda
+        spectrum shape, takes the frequency in rad/time units (consistently with time variable)
+    draws: int, optional
+        Size of the ensemble, default to 1
+    seed: int, optional
+        numpy seed
+    """
+    _dummy_dims = dict(draw=draws)
+    if dummy_dims is not None:
+        _dummy_dims.update(**dummy_dims)
+
+    if isinstance(time, tuple):
+        dt = time[1]
+    else:
+        dt = time[1] - time[0]
+
+    x = wrapper(
+        _spectral,
+        time,
+        dummy_dims=_dummy_dims,
+        dt=dt,
+        spectrum=spectrum,
+        **kwargs,
+    )
+
+    # normalize time series
+    # must be turned off for now because of a bug in dask: https://github.com/dask/dask/issues/5679
+    #x = x/x.std("time")
+    xm = x.mean("time")
+    std = np.sqrt(( np.real(x-xm)**2 + np.imag(x-xm)**2 ).mean("time"))
+    x = x/std
 
     return x
