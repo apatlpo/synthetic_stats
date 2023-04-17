@@ -1,9 +1,12 @@
 import numpy as np
+import pandas as pd
 import xarray as xr
 
 from scipy import signal, linalg
 from scipy.optimize import minimize, LbfgsInvHessProduct
 from scipy.stats import chi2
+
+from pandas.api.types import is_numeric_dtype
 
 from numba import float64, guvectorize
 
@@ -440,7 +443,7 @@ def welch(x, y, fs=None, ufunc=True, alpha=0.5, **kwargs):
         return f, E
 
 
-def spectrum_welch(x, y=None, T=60, real=None, **kwargs):
+def spectrum_welch(x, y=None, T=60, real=None, time_unit="1D", **kwargs):
     """
 
     Parameters:
@@ -461,12 +464,16 @@ def spectrum_welch(x, y=None, T=60, real=None, **kwargs):
         y = y.chunk({"time": -1})
         real = False
     #
-    kwargs["fs"] = 1 / float(x.time[1] - x.time[0])
+    if is_numeric_dtype(x.time.dtype):
+        fs = 1 / float(x.time[1] - x.time[0])
+    else:
+        fs = 1 / float( (x.time[1] - x.time[0])/pd.Timedelta(time_unit) )
+    kwargs["fs"] = fs
     # print(kwargs["fs"]) # 24
     if "nperseg" in kwargs:
         Nb = kwargs["nperseg"]
     else:
-        Nb = int(T * kwargs["fs"])
+        Nb = int(T * fs)
         kwargs["nperseg"] = Nb
     # print(Nb) # 1440 = 24*60
     if "return_onesided" in kwargs and kwargs["return_onesided"]:
