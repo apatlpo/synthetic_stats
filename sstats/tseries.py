@@ -532,7 +532,7 @@ def _spectral(time, *args, dt=None, spectrum=None, seed=None, **kwargs):
     out = np.zeros(extra, dtype=complex) # critical to specify complex dtype or imaginary part will be discarded in assignment below
     omega = 2*np.pi*fftfreq(time, d=dt).reshape(extra_ones) # rad/d
     w = rng.normal(0.0, 1.0, extra) + 1j*rng.normal(0.0, 1.0, extra)
-    u_hat = fft(w, axis=0) * spectrum(omega)
+    u_hat = fft(w, axis=0) * np.sqrt(spectrum(omega))
     out[...] = ifft(u_hat, axis=0)
     # detects any NaN
     assert not np.isnan(out).any(), out
